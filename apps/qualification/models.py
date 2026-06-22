@@ -26,3 +26,16 @@ class QualificationExtraction:
     preferred_phone: str | None
     human_handoff_requested: bool
     confidence: ExtractionConfidence
+
+
+@dataclass(frozen=True)
+class RejectedQualificationField:
+    field_name: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class QualificationFieldFilterResult:
+    accepted_fields: dict[str, object]
+    rejected_fields: tuple[RejectedQualificationField, ...]
+    human_handoff_requested: bool

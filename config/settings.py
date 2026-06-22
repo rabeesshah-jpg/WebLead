@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -48,6 +49,25 @@ TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
 N8N_WHATSAPP_WEBHOOK_URL = env("N8N_WHATSAPP_WEBHOOK_URL", default="")
 N8N_WEBHOOK_SECRET = env("N8N_WEBHOOK_SECRET", default="")
 N8N_FORWARD_TIMEOUT_SECONDS = env.int("N8N_FORWARD_TIMEOUT_SECONDS", default=5)
+
+_QUALIFICATION_CONFIDENCE_THRESHOLD_ERROR = (
+    "QUALIFICATION_CONFIDENCE_THRESHOLD must be a float greater than 0 "
+    "and less than or equal to 1."
+)
+
+
+def _load_qualification_confidence_threshold() -> float:
+    raw_value = env("QUALIFICATION_CONFIDENCE_THRESHOLD", default="0.75")
+    try:
+        threshold = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_QUALIFICATION_CONFIDENCE_THRESHOLD_ERROR) from exc
+    if not 0 < threshold <= 1:
+        raise ImproperlyConfigured(_QUALIFICATION_CONFIDENCE_THRESHOLD_ERROR)
+    return threshold
+
+
+QUALIFICATION_CONFIDENCE_THRESHOLD = _load_qualification_confidence_threshold()
 
 LOGGING = {
     "version": 1,

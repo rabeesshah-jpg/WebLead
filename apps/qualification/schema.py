@@ -21,15 +21,18 @@ EXTRACTION_JSON_SCHEMA: dict = {
         },
         "requirements": {
             "type": ["string", "null"],
+            "minLength": 1,
         },
         "referral_source": {
             "type": ["string", "null"],
+            "minLength": 1,
         },
         "whatsapp_confirmed": {
             "type": ["boolean", "null"],
         },
         "preferred_phone": {
             "type": ["string", "null"],
+            "pattern": r"^\+[1-9][0-9]{7,14}$",
         },
         "human_handoff_requested": {
             "type": "boolean",
