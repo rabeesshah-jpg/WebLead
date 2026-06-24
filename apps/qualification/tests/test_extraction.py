@@ -21,15 +21,27 @@ def test_system_prompt_contains_core_rules():
     assert '"website_upgrade"' in EXTRACTION_SYSTEM_PROMPT
     assert "human_handoff_requested" in EXTRACTION_SYSTEM_PROMPT
     assert "0.00: the field value is null" in EXTRACTION_SYSTEM_PROMPT
+    assert "known WhatsApp number is context only" in EXTRACTION_SYSTEM_PROMPT
+    assert "phone_confirmation_question_asked=false" in EXTRACTION_SYSTEM_PROMPT
 
 
-def test_user_message_includes_known_whatsapp_number():
+def test_user_message_includes_phone_confirmation_context():
+    message = build_extraction_user_message(
+        customer_message="I need a redesign",
+        known_whatsapp_number="+15551234567",
+        phone_confirmation_question_asked=True,
+    )
+    assert "Known WhatsApp number: +15551234567" in message
+    assert "Phone confirmation question asked: yes" in message
+    assert "Customer message:\nI need a redesign" in message
+
+
+def test_user_message_defaults_phone_confirmation_context_to_no():
     message = build_extraction_user_message(
         customer_message="I need a redesign",
         known_whatsapp_number="+15551234567",
     )
-    assert "Known WhatsApp number: +15551234567" in message
-    assert "Customer message:\nI need a redesign" in message
+    assert "Phone confirmation question asked: no" in message
 
 
 def test_json_schema_required_fields():

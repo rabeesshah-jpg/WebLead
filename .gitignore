@@ -8,3 +8,8 @@ venv/
 db.sqlite3
 .pytest_cache/
 *.log
+
+# Local-only files
+.env
+.venv/
+media/

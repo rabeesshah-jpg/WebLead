@@ -7,6 +7,7 @@ import json
 import pytest
 
 from apps.qualification.extractor import ExtractionParseError, parse_extraction_json, parse_extraction_payload
+from apps.qualification.schema import EXTRACTION_JSON_SCHEMA
 
 
 def _valid_payload(**overrides: object) -> dict[str, object]:
@@ -91,6 +92,22 @@ def test_invalid_project_type_is_rejected():
     payload = _valid_payload(project_type="mobile_app")
     with pytest.raises(ExtractionParseError, match="project_type must be"):
         parse_extraction_payload(payload)
+
+
+def test_website_repair_project_type_is_rejected():
+    confidence = dict(_valid_payload()["confidence"])
+    confidence["project_type"] = 0.95
+    payload = _valid_payload(project_type="website_repair", confidence=confidence)
+
+    with pytest.raises(
+        ExtractionParseError,
+        match="project_type must be new_website, website_upgrade, or null",
+    ):
+        parse_extraction_payload(payload)
+
+    allowed_values = EXTRACTION_JSON_SCHEMA["properties"]["project_type"]["enum"]
+    assert set(allowed_values) == {"new_website", "website_upgrade", None}
+    assert "website_repair" not in allowed_values
 
 
 def test_invalid_data_type_is_rejected():

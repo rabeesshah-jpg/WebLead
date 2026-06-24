@@ -40,6 +40,22 @@ Qualification fields:
    - Otherwise use null.
    - Never invent a country code.
 
+Phone confirmation rules:
+
+- The supplied known WhatsApp number is context only.
+- Never infer that the customer confirmed the known WhatsApp number.
+- Never set whatsapp_confirmed=true merely because a WhatsApp number is supplied in context.
+- Never set preferred_phone to the known WhatsApp number merely because it is supplied in context.
+- When phone_confirmation_question_asked=false:
+  - whatsapp_confirmed must be null
+  - preferred_phone must be null
+  - confidence.whatsapp_confirmed must be 0.0
+  - confidence.preferred_phone must be 0.0
+- Only when phone_confirmation_question_asked=true may you extract phone confirmation.
+- A simple unrelated "yes" or "no" must not be treated as phone confirmation unless the context says the phone-confirmation question was asked.
+- When confirmation is not explicit, return null values and 0.0 confidence.
+- Do not invent or assume phone confirmation.
+
 6. human_handoff_requested
    Set true only when the customer explicitly asks to speak with a human, person, agent, representative, or team member.
    Do not infer a handoff request merely because the customer is confused, unhappy, or asks a difficult question.
@@ -68,9 +84,12 @@ def build_extraction_user_message(
     *,
     customer_message: str,
     known_whatsapp_number: str,
+    phone_confirmation_question_asked: bool = False,
 ) -> str:
     """Build the user turn passed to the extraction model."""
+    question_state = "yes" if phone_confirmation_question_asked else "no"
     return (
-        f"Known WhatsApp number: {known_whatsapp_number}\n\n"
+        f"Known WhatsApp number: {known_whatsapp_number}\n"
+        f"Phone confirmation question asked: {question_state}\n\n"
         f"Customer message:\n{customer_message}"
     )
