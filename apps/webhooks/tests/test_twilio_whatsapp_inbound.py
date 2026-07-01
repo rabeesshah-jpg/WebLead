@@ -72,6 +72,8 @@ def _post_webhook(
     )
 
 
+@patch("apps.webhooks.views.forward_to_n8n")
+def test_valid_signature_returns_200_and_forwards(mock_forward, client):
     response = _post_webhook(client, SAMPLE_PARAMS)
 
     assert response.status_code == 200
@@ -111,16 +113,16 @@ def test_invalid_request_is_not_forwarded(mock_forward, client):
     mock_forward.assert_not_called()
 
 
-@patch("apps.webhooks.n8n_forward.urllib.request.urlopen")
-def test_n8n_failure_returns_502(mock_urlopen, client):
+def test_n8n_forward_failure_returns_empty_502_body(client):
     import urllib.error
 
-    mock_urlopen.side_effect = urllib.error.URLError("timed out")
-
-    response = _post_webhook(client, SAMPLE_PARAMS)
+    with patch("apps.webhooks.n8n_forward.urllib.request.urlopen") as mock_urlopen:
+        mock_urlopen.side_effect = urllib.error.URLError("timed out")
+        response = _post_webhook(client, SAMPLE_PARAMS)
 
     assert response.status_code == 502
-    assert "upstream" not in response.content.decode()
+    assert response.content == b""
+    assert "detail" not in response.content.decode()
 
 
 @patch("apps.webhooks.views.forward_to_n8n")

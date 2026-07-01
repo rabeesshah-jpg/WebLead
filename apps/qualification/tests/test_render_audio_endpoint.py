@@ -26,6 +26,7 @@ from apps.qualification.whatsapp_audio import (
     whatsapp_voice_replies_root,
 )
 
+from apps.qualification.render_audio_idempotency import clear_render_audio_cache
 from apps.qualification.tests.internal_api_test_helpers import (
     API_SECRET,
     internal_api_auth_headers,
@@ -39,7 +40,15 @@ SAMPLE_OGG = b"OggS" + b"\x00" * 64
 
 @pytest.fixture
 def client() -> Client:
+    clear_render_audio_cache()
     return Client()
+
+
+@pytest.fixture(autouse=True)
+def _reset_render_cache():
+    clear_render_audio_cache()
+    yield
+    clear_render_audio_cache()
 
 
 @pytest.fixture
@@ -92,6 +101,9 @@ def test_valid_request_produces_media_url_with_audio_ogg(
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "rendered"
+    assert body["fallback_to_text"] is False
+    assert body["conversation_language"] == "en"
     assert body["content_type"] == "audio/ogg"
     assert body["request_id"] == "SM_TEST_001"
     assert body["media_url"].startswith(
@@ -164,11 +176,13 @@ def test_excessive_text_is_rejected(mock_synthesize, client, media_root):
     "apps.qualification.whatsapp_audio.synthesize_wav",
     side_effect=SupertonicRequestError("Supertonic request failed"),
 )
-def test_supertonic_failure_returns_safe_503(mock_synthesize, client, media_root):
+def test_supertonic_failure_returns_safe_text_fallback(mock_synthesize, client, media_root):
     response = _post_render(client, {"text": "Hello", "request_id": "SM_TEST_005"})
 
-    assert response.status_code == 503
-    assert response.json() == {"error": "Qualification service is unavailable."}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fallback_to_text"] is True
+    assert body["fallback_reason"] == "english_tts_unavailable"
     response_text = response.content.decode("utf-8")
     assert "Supertonic" not in response_text
 
@@ -178,11 +192,11 @@ def test_supertonic_failure_returns_safe_503(mock_synthesize, client, media_root
     "apps.qualification.whatsapp_audio.synthesize_wav",
     side_effect=SupertonicResponseError("Supertonic audio response is empty"),
 )
-def test_supertonic_empty_audio_returns_safe_503(mock_synthesize, client, media_root):
+def test_supertonic_empty_audio_returns_safe_text_fallback(mock_synthesize, client, media_root):
     response = _post_render(client, {"text": "Hello", "request_id": "SM_TEST_006"})
 
-    assert response.status_code == 503
-    assert response.json() == {"error": "Qualification service is unavailable."}
+    assert response.status_code == 200
+    assert response.json()["fallback_to_text"] is True
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, PUBLIC_MEDIA_BASE_URL=PUBLIC_MEDIA_BASE_URL)
@@ -191,11 +205,13 @@ def test_supertonic_empty_audio_returns_safe_503(mock_synthesize, client, media_
     side_effect=FfmpegConversionError("ffmpeg conversion failed"),
 )
 @patch("apps.qualification.whatsapp_audio.synthesize_wav", return_value=SAMPLE_WAV)
-def test_ffmpeg_failure_returns_safe_502(mock_synthesize, mock_convert, client, media_root):
+def test_ffmpeg_failure_returns_safe_text_fallback(mock_synthesize, mock_convert, client, media_root):
     response = _post_render(client, {"text": "Hello", "request_id": "SM_TEST_007"})
 
-    assert response.status_code == 502
-    assert response.json() == {"error": "Qualification service request failed."}
+    assert response.status_code == 200
+    body = response.json()
+    assert body["fallback_to_text"] is True
+    assert body["fallback_reason"] == "english_tts_unavailable"
     response_text = response.content.decode("utf-8")
     assert "ffmpeg" not in response_text
 

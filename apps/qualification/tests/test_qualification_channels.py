@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 from django.test import Client, override_settings
@@ -11,7 +11,12 @@ from django.test import Client, override_settings
 from apps.qualification.conversation_state import clear_conversations
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
-from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
+from apps.qualification.tests.internal_api_test_helpers import (
+    API_SECRET,
+    MOCK_VOICE_AUDIO_BYTES,
+    MOCK_VOICE_AUDIO_DOWNLOAD,
+    internal_api_auth_headers,
+)
 
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
@@ -105,8 +110,8 @@ def test_text_input_returns_reply_mode_text(mock_extract, client):
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch("apps.qualification.views.transcribe_audio", return_value="Facebook")
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="Facebook")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_voice_note_input_returns_reply_mode_voice_and_transcript(
     mock_extract,
@@ -144,7 +149,11 @@ def test_voice_note_input_returns_reply_mode_voice_and_transcript(
     assert body["transcript"] == "Facebook"
     assert body["next_field"] == "whatsapp_confirmed"
     mock_download.assert_called_once_with(MEDIA_URL)
-    mock_transcribe.assert_called_once_with(b"voice-bytes", content_type="audio/ogg")
+    mock_transcribe.assert_called_once_with(
+        MOCK_VOICE_AUDIO_BYTES,
+        content_type="audio/ogg",
+        transcription_config=ANY,
+    )
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
@@ -183,8 +192,8 @@ def test_text_to_voice_switch_uses_latest_reply_mode(mock_extract, client):
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch("apps.qualification.views.transcribe_audio")
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_voice_to_text_switch_uses_latest_reply_mode(
     mock_extract,
@@ -232,8 +241,8 @@ def test_voice_to_text_switch_uses_latest_reply_mode(
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch("apps.qualification.views.transcribe_audio", return_value="Yes")
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="Yes")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_completed_voice_flow_returns_voice_completion_text_and_booking_link(
     mock_extract,

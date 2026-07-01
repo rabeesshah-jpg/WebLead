@@ -23,6 +23,7 @@ Every successful response includes:
 
 - `reply_mode`: `text` or `voice` based on the latest inbound `input_channel`
 - `reply_text`: the message to send back to the customer
+- `conversation_language`: `en` or `ar` from persisted session state
 - `send_booking_link`: `true` when `qualification_status` is `completed`
 - `booking_link`: booking URL when completed, otherwise `null`
 - `transcript`: present for voice-note input only
@@ -42,9 +43,69 @@ Send the actual booking URL separately when `send_booking_link=true`.
 
 ### Voice route (`reply_mode = "voice"`)
 
-1. Send `reply_text` to the Supertonic render API.
-2. Receive `media_url` from Supertonic.
-3. Send that `media_url` through Twilio WhatsApp using the `MediaUrl` field.
+1. Call `POST /api/internal/qualification/render-audio/` with:
+
+```json
+{
+  "text": "={{ $json.reply_text }}",
+  "voice": "={{ $json.voice || '' }}",
+  "request_id": "={{ $json.message_sid }}",
+  "whatsapp_number": "={{ $json.whatsapp_number }}",
+  "conversation_language": "={{ $json.conversation_language }}"
+}
+```
+
+Do not hardcode `"lang": "en"` or `"lang": "ar"`. Django resolves the true conversation language from `WhatsAppConversationSession.language` using `whatsapp_number`.
+
+2. Branch on the render-audio response:
+
+```text
+TTS Fallback Required?
+  condition: {{ $json.fallback_to_text }} equals true
+  ├── true  → Send WhatsApp Text Reply using the original reply_text
+  └── false → Send WhatsApp Voice Reply using media_url / audio_url
+```
+
+3. Send voice only when:
+
+- `fallback_to_text = false`
+- `media_url` or `audio_url` is present
+- `content_type` / `audio_content_type` is `audio/ogg`
+
+### Render-audio success response
+
+```json
+{
+  "status": "rendered",
+  "fallback_to_text": false,
+  "conversation_language": "ar",
+  "media_url": "https://.../media/whatsapp_voice_replies/{uuid}/",
+  "content_type": "audio/ogg",
+  "audio_url": "https://.../media/whatsapp_voice_replies/{uuid}/",
+  "audio_content_type": "audio/ogg",
+  "request_id": "MM..."
+}
+```
+
+### Render-audio text-fallback response
+
+Returned with HTTP `200` when Arabic or English TTS is unavailable or fails:
+
+```json
+{
+  "status": "text_fallback",
+  "fallback_to_text": true,
+  "conversation_language": "ar",
+  "fallback_reason": "arabic_tts_unavailable",
+  "media_url": null,
+  "content_type": null,
+  "audio_url": null,
+  "audio_content_type": null,
+  "request_id": "MM..."
+}
+```
+
+Use the original qualification `reply_text` for the text fallback message. The render-audio endpoint does not generate or replace translated reply text.
 
 ### Booking link follow-up (`send_booking_link = true`)
 
@@ -71,8 +132,11 @@ Twilio inbound
 → IF NumMedia > 0
    → POST Django extract with input_channel=whatsapp_voice_note and media_url=MediaUrl0
    → IF reply_mode = voice
-      → Supertonic render(reply_text)
-      → Twilio send media_url
+      → POST Django render-audio(reply_text, whatsapp_number, message_sid)
+      → IF fallback_to_text = true
+         → Twilio send reply_text as text
+      → ELSE
+         → Twilio send media_url
    → IF send_booking_link = true
       → Twilio send booking_link as text
 → ELSE
@@ -87,3 +151,4 @@ Twilio inbound
 - Voice and text turns share the same in-memory qualification state keyed by `whatsapp_number`.
 - If a customer switches between text and voice during a conversation, Django uses the latest inbound `input_channel` for the next `reply_mode`.
 - Configure Django with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `DEEPGRAM_API_KEY`, and related settings before enabling the voice branch in production.
+- Set the n8n HTTP Request node timeout to `60000` ms (60 seconds), not `30000` ms, because one extract call may download Twilio media, transcribe audio, and call OpenRouter.

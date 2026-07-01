@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 from django.test import Client, override_settings
@@ -93,6 +93,10 @@ def test_first_message_with_website_requirement_asks_for_referral_source(mock_ex
         customer_message="I need a new website for my restaurant.",
         known_whatsapp_number=WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
+        message_sid=None,
+        collected_fields={},
+        conversation_history=[],
+        conversation_language="en",
     )
 
 
@@ -129,6 +133,13 @@ def test_referral_source_response_asks_for_whatsapp_confirmation(mock_extract, c
         customer_message="Facebook",
         known_whatsapp_number=WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
+        message_sid=None,
+        collected_fields={
+            "project_type": "new_website",
+            "requirements": "I need a new website for my restaurant",
+        },
+        conversation_history=ANY,
+        conversation_language="en",
     )
 
 
@@ -272,6 +283,10 @@ def test_customer_declines_and_gives_alternate_phone_completes_qualification(moc
         customer_message=f"Please contact me on {alternate_phone}",
         known_whatsapp_number=WHATSAPP_NUMBER,
         phone_confirmation_question_asked=True,
+        message_sid=None,
+        collected_fields=ANY,
+        conversation_history=ANY,
+        conversation_language="en",
     )
 
 

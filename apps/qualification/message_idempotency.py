@@ -4,22 +4,33 @@ from __future__ import annotations
 
 from typing import Any
 
-_turn_responses_by_message_sid: dict[str, dict[str, Any]] = {}
+from apps.qualification.persistence.backends import get_persistence_backend
 
 
 def get_cached_turn_response(message_sid: str) -> dict[str, Any] | None:
     """Return a cached turn response for a processed Twilio MessageSid."""
-    cached = _turn_responses_by_message_sid.get(message_sid)
-    if cached is None:
-        return None
-    return dict(cached)
+    return get_persistence_backend().get_turn_response(message_sid)
+
+
+def begin_idempotent_turn(message_sid: str) -> dict[str, Any] | None:
+    """
+    Return a cached response when the MessageSid was already processed.
+
+    Return None when this caller acquired the exclusive processing slot.
+
+    Production uses Redis SET NX via ``RedisPersistenceBackend.begin_turn()`` so
+    only one worker processes a MessageSid at a time. Concurrent workers wait
+    for the cached response instead of duplicating work. In-memory fallback is
+    intended for development and tests only.
+    """
+    return get_persistence_backend().begin_turn(message_sid)
 
 
 def cache_turn_response(message_sid: str, response: dict[str, Any]) -> None:
     """Store a turn response so duplicate MessageSid replays are idempotent."""
-    _turn_responses_by_message_sid[message_sid] = dict(response)
+    get_persistence_backend().set_turn_response(message_sid, response)
 
 
 def clear_message_sid_cache() -> None:
     """Clear cached MessageSid responses. Intended for tests."""
-    _turn_responses_by_message_sid.clear()
+    get_persistence_backend().clear_message_sid_cache()

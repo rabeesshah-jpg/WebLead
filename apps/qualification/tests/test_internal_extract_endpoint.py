@@ -3,23 +3,31 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+import logging
+import urllib.error
+from unittest.mock import ANY, patch
 
 import pytest
 from django.test import Client, override_settings
 
 from apps.qualification.conversation_state import clear_conversations
+from apps.qualification.integrations.openrouter import clear_openrouter_completion_cache
 from apps.qualification.message_idempotency import clear_message_sid_cache
+from apps.qualification.persistence.cache_backend import reset_qualification_cache_backend_for_tests
+from apps.qualification.services.transcription_service import clear_transcription_media_cache
 from apps.qualification.extractor import ExtractionParseError
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
 from apps.qualification.openrouter_client import (
     OpenRouterConfigurationError,
     OpenRouterRequestError,
     OpenRouterResponseError,
+    OpenRouterTimeoutError,
 )
 
 from apps.qualification.tests.internal_api_test_helpers import (
     API_SECRET,
+    MOCK_VOICE_AUDIO_BYTES,
+    MOCK_VOICE_AUDIO_DOWNLOAD,
     internal_api_auth_headers,
 )
 
@@ -27,6 +35,15 @@ ENDPOINT_PATH = "/api/internal/qualification/extract/"
 VALID_MESSAGE = "I need a new website for a restaurant"
 VALID_WHATSAPP_NUMBER = "+923001234567"
 PROVIDER_ERROR_DETAIL = "provider secret failure details"
+TEST_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
+
+OPENROUTER_ENDPOINT_SETTINGS = {
+    "N8N_QUALIFICATION_API_SECRET": API_SECRET,
+    "OPENROUTER_API_KEY": "test-openrouter-api-key",
+    "OPENROUTER_MODEL": "test/openrouter-model",
+    "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
+    "OPENROUTER_TIMEOUT_SECONDS": 20,
+}
 
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={
@@ -50,9 +67,15 @@ def client() -> Client:
 def _reset_conversation_state():
     clear_conversations()
     clear_message_sid_cache()
+    clear_openrouter_completion_cache()
+    clear_transcription_media_cache()
+    reset_qualification_cache_backend_for_tests()
     yield
     clear_conversations()
     clear_message_sid_cache()
+    clear_openrouter_completion_cache()
+    clear_transcription_media_cache()
+    reset_qualification_cache_backend_for_tests()
 
 
 def _post_extract(
@@ -111,6 +134,10 @@ def test_valid_request_returns_filtered_result_and_calls_client(mock_extract, cl
         customer_message=VALID_MESSAGE,
         known_whatsapp_number=VALID_WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
+        message_sid=None,
+        collected_fields={},
+        conversation_history=[],
+        conversation_language="en",
     )
 
 
@@ -279,7 +306,7 @@ def test_openrouter_or_parse_errors_return_502(mock_extract, client, error):
     )
 
     assert response.status_code == 502
-    assert response.json() == {"error": "Qualification service request failed."}
+    assert response.json() == {"error": "Qualification LLM request failed."}
     mock_extract.assert_called_once()
 
 
@@ -294,14 +321,14 @@ def test_malformed_assistant_json_returns_safe_502_without_sensitive_data(mock_e
     )
 
     assert response.status_code == 502
-    assert response.json() == {"error": "Qualification service request failed."}
+    assert response.json() == {"error": "Qualification LLM request failed."}
     _assert_safe_endpoint_error_response(response)
     mock_extract.assert_called_once()
 
 
 @patch(
     "apps.qualification.qualification_turn.extract_qualification_from_openrouter",
-    side_effect=OpenRouterRequestError("OpenRouter request failed"),
+    side_effect=OpenRouterTimeoutError("OpenRouter request timed out"),
 )
 def test_timeout_returns_safe_502_without_sensitive_data(mock_extract, client):
     response = _post_extract(
@@ -310,9 +337,81 @@ def test_timeout_returns_safe_502_without_sensitive_data(mock_extract, client):
     )
 
     assert response.status_code == 502
-    assert response.json() == {"error": "Qualification service request failed."}
+    assert response.json() == {"error": "Qualification LLM request failed."}
     _assert_safe_endpoint_error_response(response)
     mock_extract.assert_called_once()
+
+
+@override_settings(**OPENROUTER_ENDPOINT_SETTINGS)
+@patch("apps.qualification.openrouter_client.urllib.request.urlopen")
+def test_openrouter_timeout_logs_safe_structured_event(mock_urlopen, client, caplog):
+    mock_urlopen.side_effect = urllib.error.URLError("timed out")
+    caplog.set_level(logging.ERROR, logger="apps.qualification")
+
+    response = _post_extract(
+        client,
+        {
+            "message": VALID_MESSAGE,
+            "whatsapp_number": VALID_WHATSAPP_NUMBER,
+            "input_channel": "whatsapp_text",
+            "message_sid": TEST_MESSAGE_SID,
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {"error": "Qualification LLM request failed."}
+    _assert_safe_endpoint_error_response(response)
+
+    failure_records = [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.name == "apps.qualification"
+        and '"step":"openrouter_call_failed"' in record.message.replace(" ", "")
+    ]
+    assert len(failure_records) == 1
+    payload = failure_records[0]
+    assert payload["step"] == "openrouter_call_failed"
+    assert payload["message_sid"] == TEST_MESSAGE_SID
+    assert payload["error_type"] == "OpenRouterTimeoutError"
+    assert payload["details"] == "OpenRouter request timed out"
+    assert VALID_MESSAGE not in caplog.text
+    assert VALID_WHATSAPP_NUMBER not in caplog.text
+    assert API_SECRET not in caplog.text
+
+
+@override_settings(**OPENROUTER_ENDPOINT_SETTINGS)
+@patch("apps.qualification.openrouter_client.urllib.request.urlopen")
+def test_openrouter_non_timeout_failure_logs_generic_upstream_event(mock_urlopen, client, caplog):
+    mock_urlopen.side_effect = urllib.error.URLError("connection refused")
+    caplog.set_level(logging.ERROR, logger="apps.qualification")
+
+    response = _post_extract(
+        client,
+        {
+            "message": VALID_MESSAGE,
+            "whatsapp_number": VALID_WHATSAPP_NUMBER,
+            "input_channel": "whatsapp_text",
+            "message_sid": TEST_MESSAGE_SID,
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {"error": "Qualification LLM request failed."}
+
+    failed_records = [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.name == "apps.qualification"
+        and '"step":"openrouter_call_failed"' in record.message.replace(" ", "")
+    ]
+    assert len(failed_records) == 1
+    assert failed_records[0]["step"] == "openrouter_call_failed"
+    assert failed_records[0]["message_sid"] == TEST_MESSAGE_SID
+    assert failed_records[0]["error_type"] == "OpenRouterRequestError"
+    assert VALID_MESSAGE not in caplog.text
+    assert VALID_WHATSAPP_NUMBER not in caplog.text
+    assert API_SECRET not in caplog.text
+    assert "connection refused" not in caplog.text
 
 
 @patch("django.db.connection.cursor")
@@ -331,7 +430,7 @@ def test_http_failure_returns_safe_502_without_provider_body_or_database_write(
     )
 
     assert response.status_code == 502
-    assert response.json() == {"error": "Qualification service request failed."}
+    assert response.json() == {"error": "Qualification LLM request failed."}
     _assert_safe_endpoint_error_response(response)
     mock_extract.assert_called_once()
     mock_cursor.assert_not_called()
@@ -472,6 +571,10 @@ def test_text_request_with_null_media_fields_returns_200(mock_extract, client):
         customer_message=N8N_TEXT_PAYLOAD["message"],
         known_whatsapp_number=N8N_TEXT_PAYLOAD["whatsapp_number"],
         phone_confirmation_question_asked=False,
+        message_sid=N8N_TEXT_PAYLOAD["message_sid"],
+        collected_fields={},
+        conversation_history=[],
+        conversation_language="en",
     )
 
 
@@ -505,11 +608,15 @@ def test_text_request_with_non_empty_media_url_ignores_media_and_returns_200(moc
         customer_message=VALID_MESSAGE,
         known_whatsapp_number=VALID_WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
+        message_sid=None,
+        collected_fields={},
+        conversation_history=[],
+        conversation_language="en",
     )
 
 
-@patch("apps.qualification.views.transcribe_audio", return_value="I need a website for my bakery")
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="I need a website for my bakery")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_voice_note_request_with_valid_audio_fields_is_accepted(
     mock_extract,
@@ -524,6 +631,7 @@ def test_voice_note_request_with_valid_audio_fields_is_accepted(
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
+            "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
             "media_url": TWILIO_MEDIA_URL,
             "media_content_type": "audio/ogg",
         },
@@ -547,11 +655,12 @@ def test_voice_note_request_with_valid_audio_fields_is_accepted(
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": None,
+            "media_content_type": "audio/ogg",
         },
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
+            "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
             "media_url": TWILIO_MEDIA_URL,
             "media_content_type": "video/mp4",
         },
@@ -586,8 +695,8 @@ def _voice_payload(**overrides: object) -> dict[str, object]:
     return payload
 
 
-@patch("apps.qualification.views.transcribe_audio", return_value=VOICE_TRANSCRIPT)
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_live_n8n_voice_payload_with_empty_message_and_mm_sid_is_accepted(
     mock_extract,
@@ -604,16 +713,24 @@ def test_live_n8n_voice_payload_with_empty_message_and_mm_sid_is_accepted(
     assert body["reply_mode"] == "voice"
     assert body["transcript"] == VOICE_TRANSCRIPT
     mock_download.assert_called_once_with(N8N_VOICE_PAYLOAD["media_url"])
-    mock_transcribe.assert_called_once_with(b"voice-bytes", content_type="audio/ogg")
+    mock_transcribe.assert_called_once_with(
+        MOCK_VOICE_AUDIO_BYTES,
+        content_type="audio/ogg",
+        transcription_config=ANY,
+    )
     mock_extract.assert_called_once_with(
         customer_message=VOICE_TRANSCRIPT,
         known_whatsapp_number=N8N_VOICE_PAYLOAD["whatsapp_number"],
         phone_confirmation_question_asked=False,
+        message_sid=N8N_VOICE_PAYLOAD["message_sid"],
+        collected_fields={},
+        conversation_history=[],
+        conversation_language="en",
     )
 
 
-@patch("apps.qualification.views.transcribe_audio", return_value=VOICE_TRANSCRIPT)
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @pytest.mark.parametrize(
     "message_value",
@@ -663,8 +780,8 @@ def test_text_payload_with_blank_message_returns_400(mock_extract, client):
     mock_extract.assert_not_called()
 
 
-@patch("apps.qualification.views.transcribe_audio", return_value=VOICE_TRANSCRIPT)
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @pytest.mark.parametrize(
     "message_sid",

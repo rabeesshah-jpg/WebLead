@@ -1,0 +1,1 @@
+"""Shared qualification domain helpers."""

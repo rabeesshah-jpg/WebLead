@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import socket
 import urllib.error
 from unittest.mock import patch
 
@@ -15,10 +16,10 @@ from apps.qualification.openrouter_client import (
     OpenRouterConfigurationError,
     OpenRouterRequestError,
     OpenRouterResponseError,
+    OpenRouterTimeoutError,
     extract_qualification_from_openrouter,
 )
 from apps.qualification.prompts import EXTRACTION_SYSTEM_PROMPT, build_extraction_user_message
-from apps.qualification.schema import EXTRACTION_JSON_SCHEMA
 
 TEST_API_KEY = "test-openrouter-api-key"
 TEST_MODEL = "test/openrouter-model"
@@ -32,6 +33,7 @@ OPENROUTER_SETTINGS = {
     "OPENROUTER_MODEL": TEST_MODEL,
     "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
     "OPENROUTER_TIMEOUT_SECONDS": 20,
+    "OPENROUTER_COMPLETION_MAX_TOKENS": 120,
 }
 
 
@@ -130,15 +132,11 @@ def test_successful_response_parses_and_filters_high_confidence_fields(mock_urlo
         customer_message=CUSTOMER_MESSAGE,
         known_whatsapp_number=KNOWN_WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
+        collected_fields={},
+        recent_history=[],
     )
-    assert body["response_format"] == {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "lead_qualification_extraction",
-            "strict": True,
-            "schema": EXTRACTION_JSON_SCHEMA,
-        },
-    }
+    assert body["max_tokens"] == 120
+    assert body["response_format"] == {"type": "json_object"}
 
     assert result.accepted_fields["project_type"] == "new_website"
     assert result.accepted_fields["requirements"] == "I need a new website for my bakery"
@@ -216,10 +214,23 @@ def test_missing_model_raises_configuration_error_without_request():
 
 @override_settings(**OPENROUTER_SETTINGS)
 @patch("apps.qualification.openrouter_client.urllib.request.urlopen")
-def test_timeout_raises_safe_request_error_without_sensitive_details(mock_urlopen):
-    mock_urlopen.side_effect = urllib.error.URLError("timed out")
+@pytest.mark.parametrize(
+    "urlopen_side_effect",
+    [
+        pytest.param(urllib.error.URLError("timed out"), id="urlerror-string-timed-out"),
+        pytest.param(urllib.error.URLError(socket.timeout("timed out")), id="urlerror-socket-timeout"),
+        pytest.param(urllib.error.URLError(TimeoutError("timed out")), id="urlerror-timeout-error"),
+        pytest.param(socket.timeout("timed out"), id="socket-timeout"),
+        pytest.param(TimeoutError("timed out"), id="timeout-error"),
+    ],
+)
+def test_timeout_failures_raise_openrouter_timeout_error(
+    mock_urlopen,
+    urlopen_side_effect,
+):
+    mock_urlopen.side_effect = urlopen_side_effect
 
-    with pytest.raises(OpenRouterRequestError, match="OpenRouter request failed") as exc_info:
+    with pytest.raises(OpenRouterTimeoutError, match="OpenRouter request timed out") as exc_info:
         extract_qualification_from_openrouter(
             customer_message=CUSTOMER_MESSAGE,
             known_whatsapp_number=KNOWN_WHATSAPP_NUMBER,
@@ -227,6 +238,36 @@ def test_timeout_raises_safe_request_error_without_sensitive_details(mock_urlope
 
     error_message = str(exc_info.value)
     _assert_client_error_is_safe(error_message)
+    assert isinstance(exc_info.value, OpenRouterRequestError)
+
+
+@override_settings(**OPENROUTER_SETTINGS)
+@patch("apps.qualification.openrouter_client.urllib.request.urlopen")
+def test_non_timeout_urlerror_remains_generic_request_error(mock_urlopen):
+    mock_urlopen.side_effect = urllib.error.URLError("connection refused")
+
+    with pytest.raises(OpenRouterRequestError, match="OpenRouter request failed") as exc_info:
+        extract_qualification_from_openrouter(
+            customer_message=CUSTOMER_MESSAGE,
+            known_whatsapp_number=KNOWN_WHATSAPP_NUMBER,
+        )
+
+    assert not isinstance(exc_info.value, OpenRouterTimeoutError)
+    _assert_client_error_is_safe(str(exc_info.value))
+
+
+@override_settings(**OPENROUTER_SETTINGS)
+@patch("apps.qualification.openrouter_client.urllib.request.urlopen")
+def test_timeout_records_elapsed_ms(mock_urlopen):
+    mock_urlopen.side_effect = urllib.error.URLError("timed out")
+
+    with pytest.raises(OpenRouterTimeoutError):
+        extract_qualification_from_openrouter(
+            customer_message=CUSTOMER_MESSAGE,
+            known_whatsapp_number=KNOWN_WHATSAPP_NUMBER,
+        )
+
+    assert extract_qualification_from_openrouter.last_elapsed_ms >= 0
 
 
 @pytest.mark.parametrize("status_code", [429, 500, 502])

@@ -4,30 +4,36 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
-from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from apps.qualification.api.logging import log_qualification_request_event
 from apps.qualification.channels import (
     VALID_INPUT_CHANNELS,
     finalize_turn_response,
     InputChannel,
+)
+from apps.qualification.core.legacy_compat import (
+    QualificationTurnRequest,
+    download_twilio_media,
+    transcribe_audio,
 )
 from apps.qualification.deepgram_client import (
     DeepgramConfigurationError,
     DeepgramRequestError,
     DeepgramResponseError,
     DeepgramTimeoutError,
-    transcribe_audio,
+    normalize_audio_content_type,
 )
+from apps.qualification.domain.constants import TWILIO_INBOUND_MESSAGE_SID_PATTERN
+from apps.qualification.domain.logging_utils import message_sid_prefix
+from apps.qualification.domain.validators import is_valid_e164_phone_number
 from apps.qualification.internal_auth import is_internal_qualification_authorized
 from apps.qualification.message_idempotency import cache_turn_response, get_cached_turn_response
 from apps.qualification.qualification_turn import (
@@ -41,7 +47,6 @@ from apps.qualification.twilio_media import (
     TwilioMediaRequestError,
     TwilioMediaTimeoutError,
     TwilioMediaUnauthorizedError,
-    download_twilio_media,
 )
 from apps.qualification.voice_note_config import VoiceNoteConfigurationError, validate_voice_note_dependencies
 from apps.qualification.voice_note_logging import log_voice_note_event
@@ -56,24 +61,13 @@ ALLOWED_REQUEST_FIELDS = frozenset(
         "message_sid",
         "media_url",
         "media_content_type",
+        "button_payload",
+        "button_text",
+        "button_type",
     },
 )
-E164_PHONE_PATTERN = re.compile(r"^\+[1-9][0-9]{7,14}$")
-TWILIO_INBOUND_MESSAGE_SID_PATTERN = re.compile(r"^(?:SM|MM)[a-zA-Z0-9]{32}$")
-
-
 class InvalidExtractRequestError(ValueError):
     """Raised when the internal extract request body is invalid."""
-
-
-@dataclass(frozen=True)
-class QualificationTurnRequest:
-    whatsapp_number: str
-    message: str | None
-    input_channel: InputChannel
-    message_sid: str | None
-    media_url: str | None
-    media_content_type: str | None
 
 
 def _normalize_optional_string(value: Any) -> str | None:
@@ -87,12 +81,7 @@ def _normalize_optional_string(value: Any) -> str | None:
 
 
 def _log_event(request: HttpRequest, event: str, *, level: int = logging.INFO) -> None:
-    payload = {
-        "event": event,
-        "timestamp": timezone.now().isoformat(),
-        "request_path": request.path,
-    }
-    logger.log(level, json.dumps(payload, separators=(",", ":")))
+    log_qualification_request_event(request, event, level=level)
 
 
 def _safe_failure_type(exc: BaseException) -> str:
@@ -104,9 +93,7 @@ def _safe_failure_type(exc: BaseException) -> str:
 
 
 def _message_sid_prefix(message_sid: str | None) -> str | None:
-    if not message_sid:
-        return None
-    return message_sid[:8]
+    return message_sid_prefix(message_sid)
 
 
 def _log_service_unavailable(
@@ -149,11 +136,20 @@ def _log_upstream_request_failed(
     logger.error(json.dumps(payload, separators=(",", ":")))
 
 
+def _has_voice_media_url(payload: dict[str, Any]) -> bool:
+    return _normalize_optional_string(payload.get("media_url")) is not None
+
+
 def _parse_input_channel(payload: dict[str, Any]) -> InputChannel:
-    raw_channel = payload.get("input_channel", "whatsapp_text")
-    if not isinstance(raw_channel, str) or raw_channel not in VALID_INPUT_CHANNELS:
-        raise InvalidExtractRequestError
-    return raw_channel  # type: ignore[return-value]
+    if "input_channel" in payload:
+        raw_channel = payload["input_channel"]
+        if not isinstance(raw_channel, str) or raw_channel not in VALID_INPUT_CHANNELS:
+            raise InvalidExtractRequestError
+        return raw_channel  # type: ignore[return-value]
+
+    if _has_voice_media_url(payload) and not _parse_optional_message(payload):
+        return "whatsapp_voice_note"
+    return "whatsapp_text"
 
 
 def _parse_message_sid(payload: dict[str, Any]) -> str | None:
@@ -236,15 +232,18 @@ def _parse_extract_request(raw_body: bytes) -> QualificationTurnRequest:
         raise InvalidExtractRequestError
 
     normalized_phone = "".join(whatsapp_number.split())
-    if not E164_PHONE_PATTERN.fullmatch(normalized_phone):
+    if not is_valid_e164_phone_number(normalized_phone):
         raise InvalidExtractRequestError
 
     input_channel = _parse_input_channel(payload)
     message_sid = _parse_message_sid(payload)
+    normalized_message = _parse_optional_message(payload)
+    has_media_url = _has_voice_media_url(payload)
 
     if input_channel == "whatsapp_text":
-        normalized_message = _parse_optional_message(payload)
         if not normalized_message:
+            if has_media_url:
+                raise InvalidExtractRequestError
             raise InvalidExtractRequestError
         return QualificationTurnRequest(
             whatsapp_number=normalized_phone,
@@ -256,8 +255,14 @@ def _parse_extract_request(raw_body: bytes) -> QualificationTurnRequest:
         )
 
     media_url = _parse_media_url(payload, required=True)
-    media_content_type = _parse_media_content_type(payload, required=True)
-    normalized_message = _parse_optional_message(payload)
+    if media_url is None:
+        if not normalized_message:
+            raise InvalidExtractRequestError
+        raise InvalidExtractRequestError
+    if message_sid is None:
+        raise InvalidExtractRequestError
+
+    media_content_type = _parse_media_content_type(payload, required=False) or "audio/ogg"
 
     return QualificationTurnRequest(
         whatsapp_number=normalized_phone,
@@ -294,7 +299,7 @@ def _resolve_turn_message(turn_request: QualificationTurnRequest) -> str:
 
     download_started = time.perf_counter()
     try:
-        audio_bytes = download_twilio_media(turn_request.media_url)
+        audio_bytes, downloaded_content_type = download_twilio_media(turn_request.media_url)
     except TwilioMediaUnauthorizedError as exc:
         log_voice_note_event(
             "qualification_voice_twilio_download_unauthorized",
@@ -322,17 +327,20 @@ def _resolve_turn_message(turn_request: QualificationTurnRequest) -> str:
         )
         raise
 
+    effective_content_type = normalize_audio_content_type(
+        downloaded_content_type or turn_request.media_content_type,
+    )
     try:
         transcription_started = time.perf_counter()
         transcript = transcribe_audio(
             audio_bytes,
-            content_type=turn_request.media_content_type,
+            content_type=effective_content_type,
         )
     except DeepgramTimeoutError:
         log_voice_note_event(
             "qualification_voice_deepgram_timeout",
             message_sid=turn_request.message_sid,
-            media_content_type=turn_request.media_content_type,
+            media_content_type=effective_content_type,
             elapsed_ms=int((time.perf_counter() - transcription_started) * 1000),
         )
         raise
@@ -340,7 +348,7 @@ def _resolve_turn_message(turn_request: QualificationTurnRequest) -> str:
         log_voice_note_event(
             "qualification_voice_deepgram_request_failed",
             message_sid=turn_request.message_sid,
-            media_content_type=turn_request.media_content_type,
+            media_content_type=effective_content_type,
             http_status=getattr(exc.__cause__, "code", None),
             elapsed_ms=int((time.perf_counter() - transcription_started) * 1000),
         )
@@ -354,7 +362,7 @@ def _resolve_turn_message(turn_request: QualificationTurnRequest) -> str:
         log_voice_note_event(
             event,
             message_sid=turn_request.message_sid,
-            media_content_type=turn_request.media_content_type,
+            media_content_type=effective_content_type,
             elapsed_ms=int((time.perf_counter() - transcription_started) * 1000),
         )
         raise

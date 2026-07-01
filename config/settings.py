@@ -25,6 +25,18 @@ INSTALLED_APPS = [
     "apps.qualification.apps.QualificationConfig",
 ]
 
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+    "EXCEPTION_HANDLER": (
+        "apps.qualification.api.exceptions.qualification_exception_handler"
+    ),
+}
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -33,7 +45,12 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {}
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "data" / "qualification.sqlite3",
+    }
+}
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -47,6 +64,10 @@ USE_X_FORWARDED_HOST = True
 
 TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+# Twilio Content Template SID for the bilingual language Quick Reply (optional until configured).
+TWILIO_LANGUAGE_PICKER_CONTENT_SID = env("TWILIO_LANGUAGE_PICKER_CONTENT_SID", default="")
+# WhatsApp sender used when sending Content API messages (optional until outbound send is wired).
+TWILIO_WHATSAPP_FROM_NUMBER = env("TWILIO_WHATSAPP_FROM_NUMBER", default="")
 
 _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
     "TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
@@ -132,10 +153,48 @@ def _load_openrouter_timeout_seconds() -> int:
 OPENROUTER_BASE_URL = _load_openrouter_base_url()
 OPENROUTER_TIMEOUT_SECONDS = _load_openrouter_timeout_seconds()
 
+_OPENROUTER_MAX_TOKENS_ERROR = "OPENROUTER_MAX_TOKENS must be a positive integer."
+_OPENROUTER_COMPLETION_MAX_TOKENS_ERROR = (
+    "OPENROUTER_COMPLETION_MAX_TOKENS must be a positive integer."
+)
+
+
+def _load_openrouter_max_tokens() -> int:
+    raw_value = env("OPENROUTER_MAX_TOKENS", default="768") or "768"
+    try:
+        max_tokens = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_OPENROUTER_MAX_TOKENS_ERROR) from exc
+    if max_tokens <= 0:
+        raise ImproperlyConfigured(_OPENROUTER_MAX_TOKENS_ERROR)
+    return max_tokens
+
+
+OPENROUTER_MAX_TOKENS = _load_openrouter_max_tokens()
+
+
+def _load_openrouter_completion_max_tokens() -> int:
+    raw_value = env("OPENROUTER_COMPLETION_MAX_TOKENS", default="120") or "120"
+    try:
+        max_tokens = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_OPENROUTER_COMPLETION_MAX_TOKENS_ERROR) from exc
+    if max_tokens <= 0:
+        raise ImproperlyConfigured(_OPENROUTER_COMPLETION_MAX_TOKENS_ERROR)
+    return max_tokens
+
+
+OPENROUTER_COMPLETION_MAX_TOKENS = _load_openrouter_completion_max_tokens()
+
 BOOKING_LINK = env("BOOKING_LINK", default="https://booking.example.com/schedule")
 
 DEEPGRAM_API_KEY = env("DEEPGRAM_API_KEY", default="")
-DEEPGRAM_MODEL = env("DEEPGRAM_MODEL", default="nova-2")
+DEEPGRAM_MODEL = env("DEEPGRAM_MODEL", default="") or env("VOICE_AGENT_DEEPGRAM_MODEL", default="nova-2")
+DEEPGRAM_LANGUAGE = env("DEEPGRAM_LANGUAGE", default="en")
+DEEPGRAM_ENGLISH_MODEL = env("DEEPGRAM_ENGLISH_MODEL", default="")
+DEEPGRAM_ENGLISH_LANGUAGE = env("DEEPGRAM_ENGLISH_LANGUAGE", default="")
+DEEPGRAM_ARABIC_MODEL = env("DEEPGRAM_ARABIC_MODEL", default="nova-3")
+DEEPGRAM_ARABIC_LANGUAGE = env("DEEPGRAM_ARABIC_LANGUAGE", default="ar")
 DEEPGRAM_BASE_URL = env("DEEPGRAM_BASE_URL", default="https://api.deepgram.com").rstrip("/")
 
 _DEEPGRAM_TIMEOUT_SECONDS_ERROR = "DEEPGRAM_TIMEOUT_SECONDS must be a positive integer."
@@ -157,7 +216,104 @@ DEEPGRAM_TIMEOUT_SECONDS = _load_deepgram_timeout_seconds()
 MEDIA_ROOT = BASE_DIR / "media"
 
 SUPERTONIC_BASE_URL = env("SUPERTONIC_BASE_URL", default="http://127.0.0.1:7788").rstrip("/")
+SUPERTONIC_ENGLISH_VOICE = (env("SUPERTONIC_ENGLISH_VOICE", default="F1") or "F1").strip()
+SUPERTONIC_ARABIC_ENABLED = env.bool("SUPERTONIC_ARABIC_ENABLED", default=False)
+SUPERTONIC_ARABIC_VOICE = (env("SUPERTONIC_ARABIC_VOICE", default="") or "").strip()
+BASE_WEBHOOK_URL = env("BASE_WEBHOOK_URL", default="").rstrip("/")
 PUBLIC_MEDIA_BASE_URL = env("PUBLIC_MEDIA_BASE_URL", default="").rstrip("/")
+
+_QUALIFICATION_CONVERSATION_TTL_SECONDS_ERROR = (
+    "QUALIFICATION_CONVERSATION_TTL_SECONDS must be a positive integer."
+)
+
+
+def _load_qualification_conversation_ttl_seconds() -> int:
+    raw_value = env("QUALIFICATION_CONVERSATION_TTL_SECONDS", default="604800") or "604800"
+    try:
+        ttl_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_QUALIFICATION_CONVERSATION_TTL_SECONDS_ERROR) from exc
+    if ttl_seconds <= 0:
+        raise ImproperlyConfigured(_QUALIFICATION_CONVERSATION_TTL_SECONDS_ERROR)
+    return ttl_seconds
+
+
+_QUALIFICATION_IDEMPOTENCY_TTL_SECONDS_ERROR = (
+    "QUALIFICATION_IDEMPOTENCY_TTL_SECONDS must be a positive integer."
+)
+
+
+def _load_qualification_idempotency_ttl_seconds() -> int:
+    raw_value = env("QUALIFICATION_IDEMPOTENCY_TTL_SECONDS", default="86400") or "86400"
+    try:
+        ttl_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_QUALIFICATION_IDEMPOTENCY_TTL_SECONDS_ERROR) from exc
+    if ttl_seconds <= 0:
+        raise ImproperlyConfigured(_QUALIFICATION_IDEMPOTENCY_TTL_SECONDS_ERROR)
+    return ttl_seconds
+
+
+_QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS_ERROR = (
+    "QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS must be a positive integer."
+)
+
+
+def _load_qualification_idempotency_processing_ttl_seconds() -> int:
+    raw_value = env("QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS", default="300") or "300"
+    try:
+        ttl_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(
+            _QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS_ERROR,
+        ) from exc
+    if ttl_seconds <= 0:
+        raise ImproperlyConfigured(_QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS_ERROR)
+    return ttl_seconds
+
+
+QUALIFICATION_REDIS_URL = env("QUALIFICATION_REDIS_URL", default="")
+QUALIFICATION_CONVERSATION_TTL_SECONDS = _load_qualification_conversation_ttl_seconds()
+QUALIFICATION_IDEMPOTENCY_TTL_SECONDS = _load_qualification_idempotency_ttl_seconds()
+QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS = (
+    _load_qualification_idempotency_processing_ttl_seconds()
+)
+
+_LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS_ERROR = (
+    "LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS must be a positive integer."
+)
+
+
+def _load_language_picker_pending_timeout_seconds() -> int:
+    raw_value = env("LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS", default="900") or "900"
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS_ERROR) from exc
+    if timeout_seconds <= 0:
+        raise ImproperlyConfigured(_LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS_ERROR)
+    return timeout_seconds
+
+
+LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS = _load_language_picker_pending_timeout_seconds()
+
+_QUALIFICATION_CACHE_TTL_SECONDS_ERROR = (
+    "QUALIFICATION_CACHE_TTL_SECONDS must be a positive integer."
+)
+
+
+def _load_qualification_cache_ttl_seconds() -> int:
+    raw_value = env("QUALIFICATION_CACHE_TTL_SECONDS", default="86400") or "86400"
+    try:
+        ttl_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_QUALIFICATION_CACHE_TTL_SECONDS_ERROR) from exc
+    if ttl_seconds <= 0:
+        raise ImproperlyConfigured(_QUALIFICATION_CACHE_TTL_SECONDS_ERROR)
+    return ttl_seconds
+
+
+QUALIFICATION_CACHE_TTL_SECONDS = _load_qualification_cache_ttl_seconds()
 
 _MAX_TTS_TEXT_LENGTH_ERROR = "MAX_TTS_TEXT_LENGTH must be a positive integer."
 

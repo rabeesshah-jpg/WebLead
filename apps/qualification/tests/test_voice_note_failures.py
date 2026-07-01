@@ -20,7 +20,13 @@ from apps.qualification.deepgram_client import (
     DeepgramTimeoutError,
 )
 from apps.qualification.message_idempotency import clear_message_sid_cache
-from apps.qualification.tests.internal_api_test_helpers import internal_api_auth_headers
+from apps.qualification.persistence.cache_backend import reset_qualification_cache_backend_for_tests
+from apps.qualification.services.transcription_service import clear_transcription_media_cache
+from apps.qualification.tests.internal_api_test_helpers import (
+    MOCK_VOICE_AUDIO_BYTES,
+    MOCK_VOICE_AUDIO_DOWNLOAD,
+    internal_api_auth_headers,
+)
 from apps.qualification.tests.test_internal_extract_endpoint import (
     N8N_VOICE_PAYLOAD,
     SAMPLE_FILTER_RESULT,
@@ -36,6 +42,17 @@ from apps.qualification.twilio_media import (
 from apps.qualification.voice_note_config import get_voice_note_config_report
 
 EXTRACT_ENDPOINT = "/api/internal/qualification/extract/"
+
+
+@pytest.fixture(autouse=True)
+def _reset_voice_note_test_state():
+    clear_message_sid_cache()
+    clear_transcription_media_cache()
+    reset_qualification_cache_backend_for_tests()
+    yield
+    clear_message_sid_cache()
+    clear_transcription_media_cache()
+    reset_qualification_cache_backend_for_tests()
 
 
 @pytest.fixture
@@ -88,7 +105,7 @@ def test_missing_deepgram_api_key_returns_503_and_logs_event(client, caplog):
     TWILIO_AUTH_TOKEN="test-twilio-auth-token",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
-@patch("apps.qualification.views.download_twilio_media")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media")
 def test_twilio_unauthorized_returns_503_and_logs_event(mock_download, client, caplog):
     def _raise_unauthorized(*args: object, **kwargs: object) -> bytes:
         exc = TwilioMediaUnauthorizedError("Twilio media download unauthorized")
@@ -105,7 +122,9 @@ def test_twilio_unauthorized_returns_503_and_logs_event(mock_download, client, c
     with caplog.at_level(logging.ERROR, logger="apps.qualification"):
         response = _post_voice(client)
 
-    assert response.status_code == 503
+    assert response.status_code == 502
+    assert response.json() == {"error": "Twilio media download failed."}
+    assert "twilio_media_download_failed" in caplog.text
     assert "qualification_voice_twilio_download_unauthorized" in caplog.text
 
 
@@ -116,14 +135,16 @@ def test_twilio_unauthorized_returns_503_and_logs_event(mock_download, client, c
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch(
-    "apps.qualification.views.download_twilio_media",
+    "apps.qualification.core.legacy_compat.download_twilio_media",
     side_effect=TwilioMediaTimeoutError("Twilio media download timed out"),
 )
 def test_twilio_download_timeout_returns_503_and_logs_event(mock_download, client, caplog):
     with caplog.at_level(logging.ERROR, logger="apps.qualification"):
         response = _post_voice(client)
 
-    assert response.status_code == 503
+    assert response.status_code == 502
+    assert response.json() == {"error": "Twilio media download failed."}
+    assert "twilio_media_download_failed" in caplog.text
     assert "qualification_voice_twilio_download_timeout" in caplog.text
 
 
@@ -133,8 +154,8 @@ def test_twilio_download_timeout_returns_503_and_logs_event(mock_download, clien
     TWILIO_AUTH_TOKEN="test-twilio-auth-token",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
-@patch("apps.qualification.views.transcribe_audio")
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 def test_deepgram_non_success_returns_503_and_logs_event(
     mock_download,
     mock_transcribe,
@@ -156,7 +177,9 @@ def test_deepgram_non_success_returns_503_and_logs_event(
     with caplog.at_level(logging.ERROR, logger="apps.qualification"):
         response = _post_voice(client)
 
-    assert response.status_code == 503
+    assert response.status_code == 502
+    assert response.json() == {"error": "Voice transcription failed."}
+    assert "deepgram_transcription_failed" in caplog.text
     assert "qualification_voice_deepgram_request_failed" in caplog.text
 
 
@@ -167,10 +190,10 @@ def test_deepgram_non_success_returns_503_and_logs_event(
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch(
-    "apps.qualification.views.transcribe_audio",
+    "apps.qualification.core.legacy_compat.transcribe_audio",
     side_effect=DeepgramTimeoutError("Deepgram request timed out"),
 )
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 def test_deepgram_timeout_returns_503_and_logs_event(
     mock_download,
     mock_transcribe,
@@ -180,7 +203,9 @@ def test_deepgram_timeout_returns_503_and_logs_event(
     with caplog.at_level(logging.ERROR, logger="apps.qualification"):
         response = _post_voice(client)
 
-    assert response.status_code == 503
+    assert response.status_code == 502
+    assert response.json() == {"error": "Voice transcription failed."}
+    assert "deepgram_transcription_failed" in caplog.text
     assert "qualification_voice_deepgram_timeout" in caplog.text
 
 
@@ -190,8 +215,8 @@ def test_deepgram_timeout_returns_503_and_logs_event(
     TWILIO_AUTH_TOKEN="test-twilio-auth-token",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
-@patch("apps.qualification.views.transcribe_audio", return_value=VOICE_TRANSCRIPT)
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_valid_mocked_voice_pipeline_returns_200_with_voice_fields(
     mock_extract,
@@ -262,6 +287,8 @@ def test_twilio_media_download_enforces_size_limit(mock_urlopen):
     from apps.qualification.twilio_media import download_twilio_media
 
     class FakeResponse:
+        headers = {"Content-Type": "audio/ogg"}
+
         def __enter__(self):
             return self
 
@@ -288,8 +315,8 @@ def test_twilio_media_download_enforces_size_limit(mock_urlopen):
     OPENROUTER_API_KEY="",
     OPENROUTER_MODEL="test/model",
 )
-@patch("apps.qualification.views.transcribe_audio", return_value=VOICE_TRANSCRIPT)
-@patch("apps.qualification.views.download_twilio_media", return_value=b"voice-bytes")
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
+@patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 def test_openrouter_missing_after_successful_transcription_logs_failure_type(
     mock_download,
     mock_transcribe,

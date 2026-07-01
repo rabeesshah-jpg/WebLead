@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from apps.qualification.models import ExtractionConfidence, QualificationExtraction
 from apps.qualification.schema import CONFIDENCE_FIELD_NAMES, QUALIFICATION_FIELD_NAMES
 
-E164_PHONE_PATTERN = re.compile(r"^\+[1-9][0-9]{7,14}$")
+from apps.qualification.domain.validators import E164_PHONE_PATTERN, is_valid_e164_phone_number
 
 _ROOT_FIELD_NAMES = frozenset(
     {
@@ -65,7 +64,7 @@ def _parse_preferred_phone(value: Any) -> str | None:
     normalized = "".join(value.split())
     if not normalized:
         return None
-    if not E164_PHONE_PATTERN.fullmatch(normalized):
+    if not is_valid_e164_phone_number(normalized):
         raise ExtractionParseError("preferred_phone must be a valid E.164 number or null")
     return normalized
 

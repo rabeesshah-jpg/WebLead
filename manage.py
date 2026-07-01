@@ -2,6 +2,10 @@
 import os
 import sys
 
+from config.sqlite_compat import enable_pysqlite3_fallback
+
+enable_pysqlite3_fallback()
+
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")

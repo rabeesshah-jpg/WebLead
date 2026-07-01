@@ -149,7 +149,9 @@ def convert_wav_to_ogg(*, wav_path: Path, ogg_path: Path) -> None:
 
 
 def build_public_media_url(audio_id: str) -> str:
-    base_url = settings.PUBLIC_MEDIA_BASE_URL.rstrip("/")
+    from apps.qualification.public_urls import get_public_media_base_url
+
+    base_url = get_public_media_base_url()
     if not base_url:
         raise RenderAudioServiceUnavailableError("Public media base URL is not configured")
     return f"{base_url}/media/whatsapp_voice_replies/{audio_id}/"
@@ -188,7 +190,7 @@ def render_whatsapp_voice_reply_safe(
 ) -> str:
     """Render text and return the public media URL for the stored OGG file."""
     try:
-        audio_id, _stored_path = render_whatsapp_voice_reply(text=text, voice=voice, lang=lang)
+        audio_id, stored_path = render_whatsapp_voice_reply(text=text, voice=voice, lang=lang)
     except SupertonicConfigurationError as exc:
         raise RenderAudioServiceUnavailableError from exc
     except (SupertonicRequestError, SupertonicResponseError) as exc:
@@ -196,4 +198,16 @@ def render_whatsapp_voice_reply_safe(
     except FfmpegConversionError as exc:
         raise RenderAudioProcessingError from exc
 
+    try:
+        render_whatsapp_voice_reply_safe.last_output_path = str(  # type: ignore[attr-defined]
+            stored_path.relative_to(Path(settings.MEDIA_ROOT)),
+        )
+    except ValueError:
+        render_whatsapp_voice_reply_safe.last_output_path = stored_path.name  # type: ignore[attr-defined]
+    render_whatsapp_voice_reply_safe.last_output_size_bytes = stored_path.stat().st_size  # type: ignore[attr-defined]
+
     return build_public_media_url(audio_id)
+
+
+render_whatsapp_voice_reply_safe.last_output_path = None  # type: ignore[attr-defined]
+render_whatsapp_voice_reply_safe.last_output_size_bytes = None  # type: ignore[attr-defined]

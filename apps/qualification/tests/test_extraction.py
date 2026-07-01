@@ -16,13 +16,12 @@ from apps.qualification.schema import (
 
 
 def test_system_prompt_contains_core_rules():
-    assert "Never invent, assume, or complete missing information" in EXTRACTION_SYSTEM_PROMPT
-    assert '"new_website"' in EXTRACTION_SYSTEM_PROMPT
-    assert '"website_upgrade"' in EXTRACTION_SYSTEM_PROMPT
+    assert "Never invent data" in EXTRACTION_SYSTEM_PROMPT
+    assert "new_website" in EXTRACTION_SYSTEM_PROMPT
+    assert "website_upgrade" in EXTRACTION_SYSTEM_PROMPT
     assert "human_handoff_requested" in EXTRACTION_SYSTEM_PROMPT
-    assert "0.00: the field value is null" in EXTRACTION_SYSTEM_PROMPT
-    assert "known WhatsApp number is context only" in EXTRACTION_SYSTEM_PROMPT
-    assert "phone_confirmation_question_asked=false" in EXTRACTION_SYSTEM_PROMPT
+    assert "phone_confirmation_question_asked=true" in EXTRACTION_SYSTEM_PROMPT
+    assert "minified JSON" in EXTRACTION_SYSTEM_PROMPT
 
 
 def test_user_message_includes_phone_confirmation_context():
@@ -30,10 +29,15 @@ def test_user_message_includes_phone_confirmation_context():
         customer_message="I need a redesign",
         known_whatsapp_number="+15551234567",
         phone_confirmation_question_asked=True,
+        collected_fields={"project_type": "website_upgrade"},
+        recent_history=[{"role": "user", "content": "Hello"}],
     )
-    assert "Known WhatsApp number: +15551234567" in message
-    assert "Phone confirmation question asked: yes" in message
-    assert "Customer message:\nI need a redesign" in message
+    payload = json.loads(message)
+    assert payload["known_whatsapp_number"] == "+15551234567"
+    assert payload["phone_confirmation_question_asked"] is True
+    assert payload["current_message"] == "I need a redesign"
+    assert payload["collected_fields"] == {"project_type": "website_upgrade"}
+    assert payload["recent_history"] == [{"role": "user", "content": "Hello"}]
 
 
 def test_user_message_defaults_phone_confirmation_context_to_no():
@@ -41,7 +45,8 @@ def test_user_message_defaults_phone_confirmation_context_to_no():
         customer_message="I need a redesign",
         known_whatsapp_number="+15551234567",
     )
-    assert "Phone confirmation question asked: no" in message
+    payload = json.loads(message)
+    assert payload["phone_confirmation_question_asked"] is False
 
 
 def test_json_schema_required_fields():

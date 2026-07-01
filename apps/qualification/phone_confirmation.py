@@ -5,8 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
+from apps.qualification.domain.validators import collapse_phone_formatting
 from apps.qualification.models import ExtractionConfidence, QualificationExtraction
 
+# Unanchored pattern for discovering E.164-like sequences embedded in free text.
 E164_IN_MESSAGE_PATTERN = re.compile(r"\+[1-9][0-9]{7,14}")
 
 _CONFIRM_KNOWN_WHATSAPP_PHRASES = (
@@ -34,7 +36,7 @@ _REJECT_KNOWN_WHATSAPP_PHRASES = (
 
 
 def _normalize_phone(value: str) -> str:
-    return "".join(value.split())
+    return collapse_phone_formatting(value)
 
 
 def _normalized_text(customer_message: str) -> str:
@@ -42,7 +44,7 @@ def _normalized_text(customer_message: str) -> str:
 
 
 def _phones_in_message(customer_message: str) -> frozenset[str]:
-    normalized = "".join(customer_message.split())
+    normalized = collapse_phone_formatting(customer_message)
     return frozenset(E164_IN_MESSAGE_PATTERN.findall(normalized))
 
 

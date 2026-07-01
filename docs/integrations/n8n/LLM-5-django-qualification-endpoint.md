@@ -21,19 +21,59 @@ Place it after these upstream nodes:
 Normalize Twilio Message
 → Allow New MessageSid
 → Record MessageSid
-→ Lookup/Create base lead
 ```
 
 Place it before these downstream nodes:
 
 ```text
-Update lead with accepted fields
+Language Selector Already Sent?
+→ Update lead with accepted fields
 → Send next WhatsApp message
 ```
 
-The qualification call must happen only after `MessageSid` deduplication and
-base lead lookup/creation. Lead updates and customer replies must happen only
-after a successful Django `200` response.
+The qualification call must happen only after `MessageSid` deduplication.
+Lead updates and customer replies must happen only after a successful Django
+`200` response **and** only when Django did not return
+`status: awaiting_language_selection`.
+
+### Language selector branch (required)
+
+Immediately after `Call Django Qualification API`, add an IF node named:
+
+```text
+Language Selector Already Sent?
+```
+
+Condition (equals `true`):
+
+```text
+={{ $json.status === "awaiting_language_selection" }}
+```
+
+Routing:
+
+```text
+true  → Stop workflow (no lead update, no outbound reply, no render-audio)
+false → Continue lead/reply workflow
+```
+
+When Django returns:
+
+```json
+{
+  "status": "awaiting_language_selection",
+  "message": "Language selector sent."
+}
+```
+
+n8n must **not**:
+
+- create or update leads
+- send another WhatsApp reply (Django already sent the Twilio Content picker)
+- call render-audio
+
+This status is returned for new customers and for mid-conversation language-change
+commands (`LANGUAGE`, `language`, `لغة`, `اللغة`, `تغيير اللغة`).
 
 ## Endpoint
 
@@ -91,14 +131,44 @@ Content-Type: application/json
 
 ### JSON body
 
+Minimum fields for text messages:
+
 ```json
 {
   "message": "<normalized inbound customer message>",
-  "whatsapp_number": "<normalized customer E.164 number>"
+  "whatsapp_number": "<normalized customer E.164 number>",
+  "input_channel": "whatsapp_text",
+  "message_sid": "<Twilio MessageSid>",
+  "button_payload": "<Twilio ButtonPayload or null>",
+  "button_text": "<Twilio ButtonText or null>",
+  "button_type": "<Twilio ButtonType or null>",
+  "media_url": null,
+  "media_content_type": null
 }
 ```
 
-Only these two keys are allowed. Extra keys are rejected.
+For voice notes, set `input_channel` to `whatsapp_voice_note`, pass `media_url`
+from `MediaUrl0`, and set `media_content_type` (default `audio/ogg`).
+
+### Twilio → n8n → Django field mapping
+
+| Twilio field | Django extract field |
+| --- | --- |
+| `From` | `whatsapp_number` (strip `whatsapp:` prefix) |
+| `Body` | `message` |
+| `MessageSid` | `message_sid` |
+| `ButtonPayload` | `button_payload` |
+| `ButtonText` | `button_text` |
+| `ButtonType` | `button_type` |
+| `MediaUrl0` | `media_url` (voice notes) |
+| `NumMedia` | used with `MediaUrl0` to detect voice notes |
+
+Django webhook (`apps/webhooks/views.py`) forwards the original Twilio form fields
+to n8n. n8n must preserve and forward Quick Reply and media fields to Django.
+
+Legacy two-field payloads (`message` + `whatsapp_number` only) remain supported
+for English text regression tests but are insufficient for language selection or
+voice-note flows in production.
 
 ### Field rules
 
@@ -207,8 +277,10 @@ the customer verbatim.
 | --- | --- | --- |
 | `400` | `{"error": "Invalid request."}` | Malformed JSON, missing fields, invalid E.164 |
 | `403` | `{"error": "Forbidden."}` | Missing or wrong `X-Internal-Webhook-Secret` |
-| `502` | `{"error": "Qualification service request failed."}` | OpenRouter or extraction failure |
-| `503` | `{"error": "Qualification service is unavailable."}` | Missing Django secret or OpenRouter config |
+| `502` | `{"error": "Twilio media download failed."}` | Twilio media download failure |
+| `502` | `{"error": "Voice transcription failed."}` | Deepgram transcription failure |
+| `502` | `{"error": "Qualification LLM request failed."}` | OpenRouter or extraction failure |
+| `503` | `{"error": "Qualification service is unavailable."}` | Missing Django secret or provider configuration |
 | `500` | `{"error": "Internal server error."}` | Unexpected Django failure |
 
 Wrong HTTP methods such as `GET` are rejected by Django and must not be used.
@@ -247,6 +319,9 @@ Suggested settings:
 
 - Method: `POST`
 - URL: `https://<django-host>/api/internal/qualification/extract/`
+- Timeout: `60000` ms (60 seconds). Do not use `30000` ms; voice-note flows may
+  download Twilio media, transcribe with Deepgram, and call OpenRouter in one
+  request.
 - Authentication: generic credential or header credential supplying
   `X-Internal-Webhook-Secret`
 - Body content type: `JSON`
@@ -254,8 +329,15 @@ Suggested settings:
 
 ```json
 {
-  "message": "={{ $json.normalized_message }}",
-  "whatsapp_number": "={{ $json.normalized_whatsapp_number }}"
+  "message": "={{ $json.Body }}",
+  "whatsapp_number": "={{ $json.normalized_whatsapp_number }}",
+  "input_channel": "={{ $json.NumMedia > 0 ? 'whatsapp_voice_note' : 'whatsapp_text' }}",
+  "message_sid": "={{ $json.MessageSid }}",
+  "button_payload": "={{ $json.ButtonPayload || null }}",
+  "button_text": "={{ $json.ButtonText || null }}",
+  "button_type": "={{ $json.ButtonType || null }}",
+  "media_url": "={{ $json.MediaUrl0 || null }}",
+  "media_content_type": "={{ $json.NumMedia > 0 ? 'audio/ogg' : null }}"
 }
 ```
 

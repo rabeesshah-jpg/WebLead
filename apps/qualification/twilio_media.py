@@ -57,8 +57,28 @@ def _read_limited_response(response: object, *, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
-def download_twilio_media(media_url: str) -> bytes:
-    """Download protected Twilio media using account credentials."""
+DEFAULT_AUDIO_CONTENT_TYPE = "audio/ogg"
+
+
+def _normalize_content_type(raw_content_type: str | None) -> str | None:
+    if not isinstance(raw_content_type, str):
+        return None
+    normalized = raw_content_type.split(";", 1)[0].strip().lower()
+    return normalized or None
+
+
+def _response_content_type(response: object) -> str:
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        content_type = headers.get("Content-Type") or headers.get("Content-type")
+        normalized = _normalize_content_type(content_type)
+        if normalized:
+            return normalized
+    return DEFAULT_AUDIO_CONTENT_TYPE
+
+
+def download_twilio_media(media_url: str) -> tuple[bytes, str]:
+    """Download protected Twilio media and return raw bytes with response content type."""
     _validate_configuration()
     _validate_media_url(media_url)
 
@@ -67,6 +87,8 @@ def download_twilio_media(media_url: str) -> bytes:
         f"{settings.TWILIO_ACCOUNT_SID}:{settings.TWILIO_AUTH_TOKEN}".encode("utf-8"),
     ).decode("ascii")
     request.add_header("Authorization", f"Basic {credentials}")
+    request.add_header("Connection", "keep-alive")
+    request.add_header("Accept", "*/*")
 
     started = time.perf_counter()
     try:
@@ -74,10 +96,11 @@ def download_twilio_media(media_url: str) -> bytes:
             request,
             timeout=settings.TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS,
         ) as response:
-            return _read_limited_response(
+            audio_bytes = _read_limited_response(
                 response,
                 max_bytes=settings.TWILIO_MEDIA_MAX_BYTES,
             )
+            return audio_bytes, _response_content_type(response)
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
             raise TwilioMediaUnauthorizedError("Twilio media download unauthorized") from exc
