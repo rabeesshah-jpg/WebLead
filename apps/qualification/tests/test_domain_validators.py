@@ -10,6 +10,7 @@ from apps.qualification.domain.validators import (
     is_direct_phone_reply,
     is_valid_e164_phone_number,
     normalize_preferred_phone_input,
+    normalize_whatsapp_session_number,
     preferred_phone_reply_needs_openrouter,
 )
 
@@ -25,6 +26,19 @@ from apps.qualification.domain.validators import (
 )
 def test_valid_e164_numbers_are_accepted(phone: str):
     assert is_valid_e164_phone_number(phone) is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("+923001234567", "+923001234567"),
+        ("+92 300 1234567", "+923001234567"),
+        ("whatsapp:+923001234567", "+923001234567"),
+        ("  whatsapp:+92 300 1234567  ", "+923001234567"),
+    ],
+)
+def test_normalize_whatsapp_session_number_produces_canonical_e164(raw: str, expected: str):
+    assert normalize_whatsapp_session_number(raw) == expected
 
 
 @pytest.mark.parametrize(

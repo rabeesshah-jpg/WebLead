@@ -22,7 +22,11 @@ from apps.qualification.domain.language_selection import (
     normalize_conversation_language,
     resolve_selected_language,
 )
-from apps.qualification.domain.messages import get_customer_message, get_qualification_question
+from apps.qualification.domain.messages import (
+    get_customer_message,
+    get_language_changed_confirmation_message,
+    get_qualification_question,
+)
 from apps.qualification.integrations.twilio_language_picker import (
     TwilioLanguagePickerConfigurationError,
     send_language_picker,
@@ -74,13 +78,13 @@ def build_qualification_start_response(
     language: str,
 ) -> dict[str, Any]:
     """Return the first local qualification question without calling OpenRouter."""
-    return build_language_change_continuation_response(
+    return build_qualification_step_response(
         whatsapp_number=whatsapp_number,
         language=language,
     )
 
 
-def build_language_change_continuation_response(
+def build_qualification_step_response(
     *,
     whatsapp_number: str,
     language: str,
@@ -117,10 +121,100 @@ def build_language_change_continuation_response(
     }
 
 
+def build_language_change_continuation_response(
+    *,
+    whatsapp_number: str,
+    language: str,
+) -> dict[str, Any]:
+    """Return the next qualification step in the chosen language without resetting lead data."""
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    normalized_language = normalize_conversation_language(language)
+    next_field = get_active_next_field(persisted_fields)
+
+    if is_qualification_complete(persisted_fields):
+        return {
+            "accepted_fields": persisted_fields,
+            "rejected_fields": {},
+            "human_handoff_requested": False,
+            "next_field": None,
+            "reply_text": get_language_changed_confirmation_message(language=normalized_language),
+            "qualification_status": "completed",
+            "preferred_phone": persisted_fields.get("preferred_phone"),
+            "conversation_language": normalized_language,
+        }
+
+    return {
+        "accepted_fields": persisted_fields,
+        "rejected_fields": {},
+        "human_handoff_requested": False,
+        "next_field": next_field,
+        "reply_text": get_language_changed_confirmation_message(language=normalized_language),
+        "qualification_status": "in_progress",
+        "preferred_phone": persisted_fields.get("preferred_phone"),
+        "conversation_language": normalized_language,
+    }
+
+
 def format_whatsapp_recipient_address(whatsapp_number: str) -> str:
     if whatsapp_number.startswith("whatsapp:"):
         return whatsapp_number
     return f"whatsapp:{whatsapp_number}"
+
+
+def trigger_language_flow(
+    *,
+    session: WhatsAppConversationSession,
+    whatsapp_number: str,
+    validated_data: dict[str, Any],
+    message_sid: str | None,
+    input_channel: str,
+    language_picker_sender: LanguagePickerSender | None = None,
+    language_command_action: str | None = None,
+    log_event: str = "language_selector_sent",
+    entry_source: str | None = None,
+) -> LanguageGateResult:
+    """
+    Shared entry point for opening the Twilio language picker.
+
+    Used by ``/language`` and the main-menu ``language`` list-picker action.
+    """
+    sender = language_picker_sender or send_language_picker
+    to_number = format_whatsapp_recipient_address(whatsapp_number)
+    try:
+        sender(to_number=to_number)
+    except TwilioLanguagePickerConfigurationError as exc:
+        _log_language_gate_event(
+            "language_selector_configuration_error",
+            whatsapp_number=whatsapp_number,
+            message_sid=message_sid,
+            error_type=type(exc).__name__,
+        )
+        raise LanguageGateConfigurationError(str(exc)) from exc
+    except Exception as exc:
+        _log_language_gate_event(
+            "language_selector_send_failed",
+            whatsapp_number=whatsapp_number,
+            message_sid=message_sid,
+            error_type=type(exc).__name__,
+        )
+        raise LanguageGateSendError("Twilio language picker send failed.") from exc
+
+    mark_session_language_picker_pending(session)
+    session.refresh_from_db()
+
+    _log_language_gate_event(
+        log_event,
+        whatsapp_number=whatsapp_number,
+        message_sid=message_sid,
+        input_channel=input_channel,
+        entry_source=entry_source,
+    )
+    return LanguageGateResult(
+        handled=True,
+        response_payload=build_awaiting_language_selection_response(
+            language_command_action=language_command_action,
+        ),
+    )
 
 
 def _log_language_gate_event(event: str, **context: object) -> None:
@@ -186,11 +280,13 @@ class LanguageGateService:
             )
 
         if session.language is None:
-            return self._send_language_picker(
+            return trigger_language_flow(
                 session=session,
                 whatsapp_number=whatsapp_number,
+                validated_data=validated_data,
                 message_sid=message_sid,
                 input_channel=input_channel,
+                language_picker_sender=self._language_picker_sender,
             )
 
         return LanguageGateResult(handled=False)
@@ -205,40 +301,15 @@ class LanguageGateService:
         language_command_action: str | None = None,
         log_event: str = "language_selector_sent",
     ) -> LanguageGateResult:
-        to_number = format_whatsapp_recipient_address(whatsapp_number)
-        try:
-            self._language_picker_sender(to_number=to_number)
-        except TwilioLanguagePickerConfigurationError as exc:
-            _log_language_gate_event(
-                "language_selector_configuration_error",
-                whatsapp_number=whatsapp_number,
-                message_sid=message_sid,
-                error_type=type(exc).__name__,
-            )
-            raise LanguageGateConfigurationError(str(exc)) from exc
-        except Exception as exc:
-            _log_language_gate_event(
-                "language_selector_send_failed",
-                whatsapp_number=whatsapp_number,
-                message_sid=message_sid,
-                error_type=type(exc).__name__,
-            )
-            raise LanguageGateSendError("Twilio language picker send failed.") from exc
-
-        mark_session_language_picker_pending(session)
-        session.refresh_from_db()
-
-        _log_language_gate_event(
-            log_event,
+        return trigger_language_flow(
+            session=session,
             whatsapp_number=whatsapp_number,
+            validated_data={},
             message_sid=message_sid,
             input_channel=input_channel,
-        )
-        return LanguageGateResult(
-            handled=True,
-            response_payload=build_awaiting_language_selection_response(
-                language_command_action=language_command_action,
-            ),
+            language_picker_sender=self._language_picker_sender,
+            language_command_action=language_command_action,
+            log_event=log_event,
         )
 
     def _apply_language_selection(
@@ -300,11 +371,13 @@ class LanguageGateService:
         input_channel: str,
     ) -> LanguageGateResult:
         if language_command.action == "show_picker":
-            return self._send_language_picker(
+            return trigger_language_flow(
                 session=session,
                 whatsapp_number=whatsapp_number,
+                validated_data=validated_data,
                 message_sid=message_sid,
                 input_channel=input_channel,
+                language_picker_sender=self._language_picker_sender,
                 language_command_action="picker_sent",
                 log_event="language_command_picker_sent",
             )

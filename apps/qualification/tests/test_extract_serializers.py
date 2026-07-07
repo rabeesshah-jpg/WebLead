@@ -48,6 +48,7 @@ TEXT_RESPONSE_PAYLOAD = {
     "preferred_phone": None,
     "reply_mode": "text",
     "send_booking_link": False,
+    "booking_link_sent": False,
     "booking_link": None,
 }
 
@@ -79,6 +80,8 @@ def _parsed_request(payload: dict[str, Any]) -> dict[str, Any]:
         "button_payload": validated["button_payload"],
         "button_text": validated["button_text"],
         "button_type": validated["button_type"],
+        "interactive_data": validated["interactive_data"],
+        "channel_metadata": validated["channel_metadata"],
     }
 
 

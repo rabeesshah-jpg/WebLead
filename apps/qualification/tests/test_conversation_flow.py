@@ -11,15 +11,18 @@ from apps.qualification.conversation_flow import (
     classify_whatsapp_confirmation_reply,
     normalize_confirmation_message,
 )
+from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.conversation_state import clear_conversations
 from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
 
+pytestmark = pytest.mark.django_db
+
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
-COMPLETION_REPLY_TEXT = "Thank you. I will send you a booking link now."
+COMPLETION_REPLY_TEXT = get_customer_message(language="en", key="completion")
 
 
 def _filter_result(
@@ -173,6 +176,7 @@ def test_customer_confirms_whatsapp_number_completes_qualification(mock_extract,
     assert body["next_field"] is None
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
     assert body["send_booking_link"] is True
+    assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
     mock_extract.assert_not_called()
 
@@ -246,6 +250,7 @@ def test_completed_state_retry_remains_completed_without_openrouter(mock_extract
     assert body["next_field"] is None
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
     assert body["send_booking_link"] is True
+    assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
     mock_extract.assert_not_called()
 
@@ -277,6 +282,7 @@ def test_customer_declines_and_gives_alternate_phone_completes_qualification(moc
     assert body["qualification_status"] == "completed"
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
     assert body["send_booking_link"] is True
+    assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
     assert mock_extract.call_count == 3
     mock_extract.assert_any_call(

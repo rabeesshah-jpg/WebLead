@@ -57,3 +57,13 @@ def append_conversation_turn(
 def clear_conversations() -> None:
     """Clear all conversation state. Intended for tests."""
     get_persistence_backend().clear_conversations()
+
+
+def clear_conversation_for_customer(whatsapp_number: str) -> None:
+    """Clear persisted qualification fields and history for one customer."""
+    get_persistence_backend().clear_conversation_for_customer(whatsapp_number)
+    from apps.qualification.services.booking_link_delivery_service import (
+        clear_booking_link_sent_for_customer,
+    )
+
+    clear_booking_link_sent_for_customer(whatsapp_number=whatsapp_number)

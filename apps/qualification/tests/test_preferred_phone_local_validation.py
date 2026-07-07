@@ -23,7 +23,7 @@ PREFERRED_PHONE = "+923246271156"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 PHONE_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
-COMPLETION_REPLY_TEXT = "Thank you. I will send you a booking link now."
+COMPLETION_REPLY_TEXT = get_customer_message(language="en", key="completion")
 
 BASE_FIELDS = {
     "project_type": "new_website",
@@ -93,6 +93,7 @@ def test_valid_preferred_phone_is_accepted_without_openrouter(mock_extract, clie
     assert body["next_field"] is None
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
     assert body["send_booking_link"] is True
+    assert body["booking_link_sent"] is True
     assert get_accepted_fields(WHATSAPP_NUMBER)["project_type"] == "new_website"
     mock_extract.assert_not_called()
 
@@ -140,7 +141,10 @@ def test_arabic_session_uses_arabic_completion_message(mock_extract, mock_send_p
     assert response.status_code == 200
     body = response.json()
     assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ARABIC, key="completion")
+    assert body["reply_text"] == get_customer_message(
+        language=LANGUAGE_ARABIC,
+        key="completion",
+    )
     assert body["qualification_status"] == "completed"
     mock_extract.assert_not_called()
 

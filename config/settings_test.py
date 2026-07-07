@@ -18,6 +18,8 @@ N8N_WHATSAPP_WEBHOOK_URL = "https://n8n.example/webhook/whatsapp-inbound"
 N8N_WEBHOOK_SECRET = "test-n8n-webhook-secret"
 N8N_FORWARD_TIMEOUT_SECONDS = 5
 N8N_QUALIFICATION_API_SECRET = "test-n8n-qualification-api-secret"
+WEBLEAD_VOICE_EVENT_SECRET = "test-weblead-voice-event-secret"
+TWILIO_WHATSAPP_FROM_NUMBER = "whatsapp:+15557654321"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
 BASE_WEBHOOK_URL = "https://tunnel.example.com"
 PUBLIC_MEDIA_BASE_URL = "https://tunnel.example.com"
@@ -27,6 +29,11 @@ SUPERTONIC_ENGLISH_VOICE = "F1"
 SUPERTONIC_ARABIC_ENABLED = False
 SUPERTONIC_ARABIC_VOICE = ""
 TWILIO_LANGUAGE_PICKER_CONTENT_SID = ""
+TWILIO_MENU_CONTENT_SID = ""
+TWILIO_WHATSAPP_MENU_CONTENT_SID = ""
+LEAD_QUALIFICATION_ENABLED = True
+WHATSAPP_MENU_INACTIVITY_SECONDS = 600
+WHATSAPP_MENU_PENDING_SECONDS = 600
 
 DATABASES = {
     "default": {

@@ -6,10 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from apps.qualification.conversation_state import clear_conversations
 from apps.qualification.message_idempotency import cache_turn_response, clear_message_sid_cache
+from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
 from apps.qualification.qualification_turn import QualificationServiceRequestError
 from apps.qualification.services.extract_service import ExtractService
+
+pytestmark = pytest.mark.django_db
 
 VALID_MESSAGE = "I need a new website for a restaurant"
 VALID_WHATSAPP_NUMBER = "+923001234567"
@@ -49,9 +53,13 @@ VOICE_VALIDATED_DATA = {
 
 @pytest.fixture(autouse=True)
 def _clear_idempotency_cache():
+    clear_conversations()
     clear_message_sid_cache()
+    WhatsAppConversationSession.objects.all().delete()
     yield
+    clear_conversations()
     clear_message_sid_cache()
+    WhatsAppConversationSession.objects.all().delete()
 
 
 def _expected_turn_response() -> dict:
@@ -69,6 +77,7 @@ def _expected_turn_response() -> dict:
         "preferred_phone": None,
         "reply_mode": "text",
         "send_booking_link": False,
+        "booking_link_sent": False,
         "booking_link": None,
     }
 

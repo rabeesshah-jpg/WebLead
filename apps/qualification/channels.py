@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from django.conf import settings
-
+from apps.qualification.domain.booking_completion import build_booking_completion_reply
 from apps.qualification.domain.language_selection import (
     LANGUAGE_ENGLISH,
     normalize_conversation_language,
@@ -44,10 +43,9 @@ def finalize_turn_response(
         finalized["transcript"] = transcript
 
     if finalized.get("qualification_status") == "completed":
-        finalized["send_booking_link"] = True
-        finalized["booking_link"] = settings.BOOKING_LINK
-        finalized["reply_text"] = get_customer_message(language=language, key="completion")
+        finalized.update(build_booking_completion_reply(language=language))
     else:
+        finalized["booking_link_sent"] = False
         finalized["send_booking_link"] = False
         finalized["booking_link"] = None
 

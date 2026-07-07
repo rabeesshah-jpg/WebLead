@@ -66,8 +66,16 @@ TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
 # Twilio Content Template SID for the bilingual language Quick Reply (optional until configured).
 TWILIO_LANGUAGE_PICKER_CONTENT_SID = env("TWILIO_LANGUAGE_PICKER_CONTENT_SID", default="")
+# Twilio Content Template SID for the clickable WhatsApp menu (optional; plain-text fallback when unset).
+TWILIO_MENU_CONTENT_SID = env("TWILIO_MENU_CONTENT_SID", default="")
+# Twilio list-picker main menu Content Template SID (preferred name; falls back to TWILIO_MENU_CONTENT_SID).
+TWILIO_WHATSAPP_MENU_CONTENT_SID = (
+    env("TWILIO_WHATSAPP_MENU_CONTENT_SID", default="") or TWILIO_MENU_CONTENT_SID
+)
 # WhatsApp sender used when sending Content API messages (optional until outbound send is wired).
 TWILIO_WHATSAPP_FROM_NUMBER = env("TWILIO_WHATSAPP_FROM_NUMBER", default="")
+# Master switch for WhatsApp lead qualification flows (menu, inactivity, extraction).
+LEAD_QUALIFICATION_ENABLED = env.bool("LEAD_QUALIFICATION_ENABLED", default=True)
 
 _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
     "TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
@@ -106,6 +114,7 @@ N8N_WHATSAPP_WEBHOOK_URL = env("N8N_WHATSAPP_WEBHOOK_URL", default="")
 N8N_WEBHOOK_SECRET = env("N8N_WEBHOOK_SECRET", default="")
 N8N_FORWARD_TIMEOUT_SECONDS = env.int("N8N_FORWARD_TIMEOUT_SECONDS", default=5)
 N8N_QUALIFICATION_API_SECRET = env("N8N_QUALIFICATION_API_SECRET", default="")
+WEBLEAD_VOICE_EVENT_SECRET = env("WEBLEAD_VOICE_EVENT_SECRET", default="")
 
 _QUALIFICATION_CONFIDENCE_THRESHOLD_ERROR = (
     "QUALIFICATION_CONFIDENCE_THRESHOLD must be a float greater than 0 "
@@ -186,7 +195,7 @@ def _load_openrouter_completion_max_tokens() -> int:
 
 OPENROUTER_COMPLETION_MAX_TOKENS = _load_openrouter_completion_max_tokens()
 
-BOOKING_LINK = env("BOOKING_LINK", default="https://booking.example.com/schedule")
+BOOKING_LINK = (env("BOOKING_LINK", default="") or "").strip()
 
 DEEPGRAM_API_KEY = env("DEEPGRAM_API_KEY", default="")
 DEEPGRAM_MODEL = env("DEEPGRAM_MODEL", default="") or env("VOICE_AGENT_DEEPGRAM_MODEL", default="nova-2")
@@ -296,6 +305,42 @@ def _load_language_picker_pending_timeout_seconds() -> int:
 
 
 LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS = _load_language_picker_pending_timeout_seconds()
+
+_WHATSAPP_MENU_INACTIVITY_SECONDS_ERROR = (
+    "WHATSAPP_MENU_INACTIVITY_SECONDS must be a positive integer."
+)
+
+
+def _load_whatsapp_menu_inactivity_seconds() -> int:
+    raw_value = env("WHATSAPP_MENU_INACTIVITY_SECONDS", default="600") or "600"
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_WHATSAPP_MENU_INACTIVITY_SECONDS_ERROR) from exc
+    if timeout_seconds <= 0:
+        raise ImproperlyConfigured(_WHATSAPP_MENU_INACTIVITY_SECONDS_ERROR)
+    return timeout_seconds
+
+
+WHATSAPP_MENU_INACTIVITY_SECONDS = _load_whatsapp_menu_inactivity_seconds()
+
+_WHATSAPP_MENU_PENDING_SECONDS_ERROR = (
+    "WHATSAPP_MENU_PENDING_SECONDS must be a positive integer."
+)
+
+
+def _load_whatsapp_menu_pending_seconds() -> int:
+    raw_value = env("WHATSAPP_MENU_PENDING_SECONDS", default="600") or "600"
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_WHATSAPP_MENU_PENDING_SECONDS_ERROR) from exc
+    if timeout_seconds <= 0:
+        raise ImproperlyConfigured(_WHATSAPP_MENU_PENDING_SECONDS_ERROR)
+    return timeout_seconds
+
+
+WHATSAPP_MENU_PENDING_SECONDS = _load_whatsapp_menu_pending_seconds()
 
 _QUALIFICATION_CACHE_TTL_SECONDS_ERROR = (
     "QUALIFICATION_CACHE_TTL_SECONDS must be a positive integer."

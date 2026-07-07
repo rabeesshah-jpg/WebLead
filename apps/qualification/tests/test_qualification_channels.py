@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from django.test import Client, override_settings
+from django.utils import timezone
 
 from apps.qualification.conversation_state import clear_conversations
+from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.message_idempotency import clear_message_sid_cache
-from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
+from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField, WhatsAppConversationSession
 from apps.qualification.tests.internal_api_test_helpers import (
     API_SECRET,
     MOCK_VOICE_AUDIO_BYTES,
@@ -24,7 +26,9 @@ BOOKING_LINK = "https://booking.example.com/test-schedule"
 MEDIA_URL = (
     "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
 )
-VOICE_COMPLETION_REPLY = "Thank you. I will send you a booking link now."
+VOICE_COMPLETION_REPLY = get_customer_message(language="en", key="completion")
+
+pytestmark = pytest.mark.django_db
 
 
 def _filter_result(
@@ -80,9 +84,16 @@ def client() -> Client:
 def _reset_state():
     clear_conversations()
     clear_message_sid_cache()
+    WhatsAppConversationSession.objects.all().delete()
+    WhatsAppConversationSession.objects.create(
+        whatsapp_number=WHATSAPP_NUMBER,
+        language="en",
+        language_selected_at=timezone.now(),
+    )
     yield
     clear_conversations()
     clear_message_sid_cache()
+    WhatsAppConversationSession.objects.all().delete()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
@@ -248,6 +259,7 @@ def test_completed_voice_flow_returns_voice_completion_text_and_booking_link(
     mock_extract,
     mock_download,
     mock_transcribe,
+    mock_twilio_booking_link_send: MagicMock,
     client,
 ):
     mock_extract.side_effect = [
@@ -278,8 +290,12 @@ def test_completed_voice_flow_returns_voice_completion_text_and_booking_link(
     assert body["qualification_status"] == "completed"
     assert body["reply_text"] == VOICE_COMPLETION_REPLY
     assert body["send_booking_link"] is True
+    assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
     assert BOOKING_LINK not in body["reply_text"]
+    mock_twilio_booking_link_send.assert_called_once()
+    sent_body = mock_twilio_booking_link_send.call_args.kwargs["body"]
+    assert BOOKING_LINK in sent_body
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)

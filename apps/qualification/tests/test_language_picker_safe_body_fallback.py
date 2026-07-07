@@ -13,7 +13,7 @@ from django.utils import timezone
 from apps.qualification.conversation_state import clear_conversations, get_accepted_fields, save_accepted_fields
 from apps.qualification.domain.language_picker_pending import language_picker_pending_timeout
 from apps.qualification.domain.language_selection import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from apps.qualification.domain.messages import get_qualification_question
+from apps.qualification.domain.messages import get_language_changed_confirmation_message
 from apps.qualification.message_idempotency import clear_message_sid_cache, get_cached_turn_response
 from apps.qualification.models import QualificationFieldFilterResult, WhatsAppConversationSession
 from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
@@ -25,7 +25,6 @@ VALID_WHATSAPP_NUMBER = "+923001234567"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 CHANGE_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
 SELECT_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce92"
-ARABIC_REFERRAL_QUESTION = get_qualification_question(language=LANGUAGE_ARABIC, field="referral_source")
 
 LANGUAGE_PICKER_SETTINGS = {
     "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
@@ -208,9 +207,8 @@ def test_arabic_session_pending_english_body_switches_language(
     assert session.language_picker_pending_until is None
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
     assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == get_qualification_question(
+    assert body["reply_text"] == get_language_changed_confirmation_message(
         language=LANGUAGE_ENGLISH,
-        field="referral_source",
     )
     mock_extract.assert_not_called()
     mock_transcribe.assert_not_called()
@@ -240,7 +238,9 @@ def test_english_session_pending_arabic_body_switches_language(
     assert session.language == LANGUAGE_ARABIC
     assert session.language_picker_pending_until is None
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
-    assert body["reply_text"] == ARABIC_REFERRAL_QUESTION
+    assert body["reply_text"] == get_language_changed_confirmation_message(
+        language=LANGUAGE_ARABIC,
+    )
     mock_extract.assert_not_called()
     mock_transcribe.assert_not_called()
 

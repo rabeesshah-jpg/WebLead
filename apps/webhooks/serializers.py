@@ -44,6 +44,8 @@ class TwilioInboundSerializer(serializers.Serializer):
     ButtonPayload = serializers.CharField(required=False, allow_blank=True, default="")
     ButtonText = serializers.CharField(required=False, allow_blank=True, default="")
     ButtonType = serializers.CharField(required=False, allow_blank=True, default="")
+    InteractiveData = serializers.CharField(required=False, allow_blank=True, default="")
+    ChannelMetadata = serializers.CharField(required=False, allow_blank=True, default="")
     MediaUrl0 = serializers.CharField(required=False, allow_blank=True, default="")
     NumMedia = serializers.CharField(required=False, allow_blank=True, default="0")
 
@@ -93,6 +95,8 @@ class TwilioInboundSerializer(serializers.Serializer):
             "button_payload": self.button_payload,
             "button_text": _normalize_optional_twilio_string(data.get("ButtonText")),
             "button_type": _normalize_optional_twilio_string(data.get("ButtonType")),
+            "interactive_data": _normalize_optional_twilio_string(data.get("InteractiveData")),
+            "channel_metadata": _normalize_optional_twilio_string(data.get("ChannelMetadata")),
         }
 
         if media_url and num_media > 0:

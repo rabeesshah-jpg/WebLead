@@ -10,6 +10,7 @@ from apps.qualification.domain.messages import (
     REQUIRED_MESSAGE_KEYS,
     UnknownMessageKeyError,
     get_customer_message,
+    get_language_changed_confirmation_message,
     get_qualification_question,
 )
 
@@ -44,6 +45,17 @@ def test_all_required_message_keys_exist_for_both_languages():
         for key in REQUIRED_MESSAGE_KEYS:
             assert key in catalog
             assert catalog[key].strip()
+
+
+def test_language_changed_confirmation_messages_exist():
+    assert (
+        get_language_changed_confirmation_message(language=LANGUAGE_ENGLISH)
+        == "Language changed to English. We'll continue from where we left off."
+    )
+    assert (
+        get_language_changed_confirmation_message(language=LANGUAGE_ARABIC)
+        == "تم تغيير اللغة إلى العربية. سنكمل من حيث توقفنا."
+    )
 
 
 def test_unsupported_language_falls_back_to_english():

@@ -35,12 +35,16 @@ from apps.qualification.domain.constants import TWILIO_INBOUND_MESSAGE_SID_PATTE
 from apps.qualification.domain.logging_utils import message_sid_prefix
 from apps.qualification.domain.validators import is_valid_e164_phone_number
 from apps.qualification.internal_auth import is_internal_qualification_authorized
-from apps.qualification.message_idempotency import cache_turn_response, get_cached_turn_response
+from apps.qualification.domain.extract_errors import ExtractStepFailure
 from apps.qualification.qualification_turn import (
     QualificationServiceRequestError,
     QualificationServiceUnavailableError,
     QualificationTurnProcessingError,
-    handle_qualification_turn,
+)
+from apps.qualification.services.extract_service import ExtractService
+from apps.qualification.services.language_gate_service import (
+    LanguageGateConfigurationError,
+    LanguageGateSendError,
 )
 from apps.qualification.twilio_media import (
     TwilioMediaConfigurationError,
@@ -383,6 +387,17 @@ def _build_success_response(
     )
 
 
+def _validated_data_from_turn_request(turn_request: QualificationTurnRequest) -> dict[str, Any]:
+    return {
+        "whatsapp_number": turn_request.whatsapp_number,
+        "message": turn_request.message,
+        "input_channel": turn_request.input_channel,
+        "message_sid": turn_request.message_sid,
+        "media_url": turn_request.media_url,
+        "media_content_type": turn_request.media_content_type,
+    }
+
+
 @csrf_exempt
 @require_POST
 def internal_qualification_extract(request: HttpRequest) -> JsonResponse:
@@ -392,7 +407,6 @@ def internal_qualification_extract(request: HttpRequest) -> JsonResponse:
             {"error": "Qualification service is unavailable."},
             status=503,
         )
-
 
     if not is_internal_qualification_authorized(request):
         _log_event(request, "qualification_internal_auth_failed", level=logging.WARNING)
@@ -404,36 +418,27 @@ def internal_qualification_extract(request: HttpRequest) -> JsonResponse:
         _log_event(request, "qualification_internal_invalid_request", level=logging.WARNING)
         return JsonResponse({"error": "Invalid request."}, status=400)
 
-    if turn_request.message_sid:
-        cached_response = get_cached_turn_response(turn_request.message_sid)
-        if cached_response is not None:
-            return JsonResponse(cached_response, status=200)
-
-    transcript: str | None = None
     try:
-        message = _resolve_turn_message(turn_request)
-        if turn_request.input_channel == "whatsapp_voice_note":
-            transcript = message
-        turn_response = handle_qualification_turn(
-            whatsapp_number=turn_request.whatsapp_number,
-            message=message,
-        )
+        response_payload = ExtractService().run_turn(_validated_data_from_turn_request(turn_request))
     except (
         TwilioMediaConfigurationError,
         DeepgramConfigurationError,
         QualificationServiceUnavailableError,
-        TwilioMediaUnauthorizedError,
-        TwilioMediaTimeoutError,
-        TwilioMediaRequestError,
-        DeepgramTimeoutError,
-        DeepgramRequestError,
-        DeepgramResponseError,
+        LanguageGateConfigurationError,
     ) as exc:
         _log_service_unavailable(request, exc, turn_request=turn_request)
         return JsonResponse(
             {"error": "Qualification service is unavailable."},
             status=503,
         )
+    except LanguageGateSendError as exc:
+        _log_upstream_request_failed(request, exc, turn_request=turn_request)
+        return JsonResponse(
+            {"error": "Qualification service request failed."},
+            status=502,
+        )
+    except ExtractStepFailure as exc:
+        return JsonResponse({"error": exc.info.public_message}, status=502)
     except QualificationServiceRequestError as exc:
         _log_upstream_request_failed(request, exc, turn_request=turn_request)
         return JsonResponse(
@@ -446,14 +451,5 @@ def internal_qualification_extract(request: HttpRequest) -> JsonResponse:
     except Exception:
         _log_event(request, "qualification_internal_unexpected_error", level=logging.ERROR)
         return JsonResponse({"error": "Internal server error."}, status=500)
-
-    response_payload = _build_success_response(
-        turn_request=turn_request,
-        turn_response=turn_response,
-        transcript=transcript,
-    )
-
-    if turn_request.message_sid:
-        cache_turn_response(turn_request.message_sid, response_payload)
 
     return JsonResponse(response_payload, status=200)

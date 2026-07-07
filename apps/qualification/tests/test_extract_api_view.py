@@ -10,9 +10,12 @@ from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.qualification.conversation_state import clear_conversations
+from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
 from apps.qualification.openrouter_client import OpenRouterConfigurationError
+
+pytestmark = pytest.mark.django_db
 from apps.qualification.qualification_turn import (
     QualificationServiceRequestError,
     QualificationServiceUnavailableError,
@@ -59,6 +62,7 @@ EXPECTED_TEXT_RESPONSE = {
     "preferred_phone": None,
     "reply_mode": "text",
     "send_booking_link": False,
+    "booking_link_sent": False,
     "booking_link": None,
 }
 
@@ -74,9 +78,11 @@ def client() -> Client:
 def _reset_state():
     clear_conversations()
     clear_message_sid_cache()
+    WhatsAppConversationSession.objects.all().delete()
     yield
     clear_conversations()
     clear_message_sid_cache()
+    WhatsAppConversationSession.objects.all().delete()
 
 
 def _post_extract(

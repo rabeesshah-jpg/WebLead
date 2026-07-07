@@ -27,12 +27,14 @@ from apps.qualification.api.logging import (
     log_service_unavailable,
     log_upstream_request_failed,
 )
-from apps.qualification.api.permissions import InternalWebhookSecretPermission
+from apps.qualification.api.permissions import InternalWebhookSecretPermission, VoiceEventSecretPermission
 from apps.qualification.api.serializers import (
     ExtractRequestSerializer,
     ExtractResponseSerializer,
     RenderAudioRequestSerializer,
     RenderAudioResponseSerializer,
+    VoiceCallCompletedRequestSerializer,
+    VoiceCallCompletedResponseSerializer,
 )
 from apps.qualification.deepgram_client import DeepgramConfigurationError
 from apps.qualification.core.legacy_compat import QualificationTurnRequest
@@ -55,6 +57,10 @@ from apps.qualification.services.language_gate_service import (
     LanguageGateSendError,
 )
 from apps.qualification.services.render_audio_service import RenderAudioService
+from apps.qualification.services.voice_call_completed_service import (
+    VoiceCallCompletedSendError,
+    VoiceCallCompletedService,
+)
 from apps.qualification.twilio_media import TwilioMediaConfigurationError
 from apps.qualification.whatsapp_audio import InvalidRenderAudioRequestError
 
@@ -177,7 +183,7 @@ class ExtractAPIView(APIView):
             api_total_ms,
             message_sid=message_sid,
         )
-        if result.get("status") == "awaiting_language_selection":
+        if result.get("status") in ("awaiting_language_selection", "awaiting_menu_selection"):
             return Response(result, status=200)
 
         if (
@@ -292,4 +298,98 @@ class RenderAudioAPIView(APIView):
                 tts_generation_ms=tts_generation_ms,
                 render_api_total_ms=render_api_total_ms,
             )
+        return Response(response_serializer.data, status=200)
+
+
+class VoiceCallCompletedAPIView(APIView):
+    authentication_classes = [QualificationInternalAuthentication]
+    permission_classes = [VoiceEventSecretPermission]
+    service_class = VoiceCallCompletedService
+
+    def get_service(self) -> VoiceCallCompletedService:
+        return self.service_class()
+
+    def dispatch(self, request, *args, **kwargs):
+        if not settings.WEBLEAD_VOICE_EVENT_SECRET:
+            log_qualification_request_event(
+                request,
+                "voice_call_completed_service_unavailable",
+                level=logging.ERROR,
+            )
+            request = self.initialize_request(request, *args, **kwargs)
+            self.request = request
+            self.headers = self.default_response_headers
+            return self.finalize_response(
+                request,
+                error_response(SERVICE_UNAVAILABLE_ERROR, 503),
+                *args,
+                **kwargs,
+            )
+        return super().dispatch(request, *args, **kwargs)
+
+    def permission_denied(self, request, message=None, code=None):
+        log_qualification_request_event(request, "voice_call_completed_auth_failed", level=logging.WARNING)
+        raise PermissionDenied(detail=FORBIDDEN_ERROR)
+
+    def http_method_not_allowed(self, request, *args, **kwargs):
+        return Response(status=405)
+
+    def post(self, request: Request) -> Response:
+        try:
+            payload = request.data
+        except ParseError:
+            log_qualification_request_event(
+                request,
+                "voice_call_completed_invalid_request",
+                level=logging.WARNING,
+            )
+            return error_response(INVALID_REQUEST_ERROR, 400)
+
+        if not isinstance(payload, dict):
+            log_qualification_request_event(
+                request,
+                "voice_call_completed_invalid_request",
+                level=logging.WARNING,
+            )
+            return error_response(INVALID_REQUEST_ERROR, 400)
+
+        serializer = VoiceCallCompletedRequestSerializer(data=payload)
+        if not serializer.is_valid():
+            event_id = payload.get("event_id") if isinstance(payload.get("event_id"), str) else None
+            call_id = payload.get("call_id") if isinstance(payload.get("call_id"), str) else None
+            whatsapp_errors = serializer.errors.get("whatsapp_number")
+            log_qualification_request_event(
+                request,
+                "voice_call_completed_invalid_request",
+                level=logging.WARNING,
+                event_id=event_id,
+                call_id=call_id,
+                validation_error_fields=sorted(serializer.errors.keys()),
+                whatsapp_number_invalid=bool(whatsapp_errors),
+            )
+            return error_response(INVALID_REQUEST_ERROR, 400)
+
+        validated_data = serializer.validated_data
+        try:
+            result = self.get_service().process(validated_data)
+        except VoiceCallCompletedSendError:
+            log_qualification_request_event(
+                request,
+                "voice_call_completed_send_failed",
+                level=logging.ERROR,
+                event_id=validated_data["event_id"],
+                call_id=validated_data["call_id"],
+            )
+            return error_response(SERVICE_REQUEST_FAILED_ERROR, 502)
+        except Exception:
+            log_qualification_request_event(
+                request,
+                "voice_call_completed_unexpected_error",
+                level=logging.ERROR,
+                event_id=validated_data["event_id"],
+                call_id=validated_data["call_id"],
+            )
+            return error_response(INTERNAL_SERVER_ERROR, 500)
+
+        response_serializer = VoiceCallCompletedResponseSerializer(instance=result)
         return Response(response_serializer.data, status=200)

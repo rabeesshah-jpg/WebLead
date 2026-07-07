@@ -321,5 +321,8 @@ def test_arabic_completion_response_is_arabic(mock_extract, mock_send_picker, cl
     body = completion.json()
     assert body["qualification_status"] == "completed"
     assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ARABIC, key="completion")
+    assert body["reply_text"] == get_customer_message(
+        language=LANGUAGE_ARABIC,
+        key="completion",
+    )
     mock_extract.assert_not_called()

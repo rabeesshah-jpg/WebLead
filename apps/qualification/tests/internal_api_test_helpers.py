@@ -32,6 +32,7 @@ EXTRACT_SUCCESS_FIELD_NAMES = frozenset(
         "preferred_phone",
         "reply_mode",
         "send_booking_link",
+        "booking_link_sent",
         "booking_link",
     },
 )

@@ -28,6 +28,25 @@ ALLOWED_REQUEST_FIELDS = frozenset(
         "button_payload",
         "button_text",
         "button_type",
+        "interactive_data",
+        "channel_metadata",
+    },
+)
+VOICE_CALL_COMPLETED_EVENT = "voice_call.completed"
+VALID_PROJECT_TYPES = frozenset({"new_website", "website_upgrade"})
+ALLOWED_VOICE_CALL_COMPLETED_FIELDS = frozenset(
+    {
+        "event",
+        "event_id",
+        "call_id",
+        "customer_phone",
+        "whatsapp_number",
+        "project_type",
+        "requirements",
+        "referral_source",
+        "whatsapp_confirmed",
+        "preferred_phone",
+        "send_booking_link",
     },
 )
 ALLOWED_RENDER_AUDIO_FIELDS = frozenset(
@@ -221,6 +240,20 @@ class ExtractRequestSerializer(serializers.Serializer):
         button_payload = _normalize_optional_string(payload.get("button_payload"))
         button_text = _normalize_optional_string(payload.get("button_text"))
         button_type = _normalize_optional_string(payload.get("button_type"))
+        interactive_data = payload.get("interactive_data")
+        if interactive_data is not None and not isinstance(interactive_data, (str, dict)):
+            raise serializers.ValidationError("Invalid interactive_data.")
+        channel_metadata = payload.get("channel_metadata")
+        if channel_metadata is not None and not isinstance(channel_metadata, (str, dict)):
+            raise serializers.ValidationError("Invalid channel_metadata.")
+
+        common_fields = {
+            "button_payload": button_payload,
+            "button_text": button_text,
+            "button_type": button_type,
+            "interactive_data": interactive_data,
+            "channel_metadata": channel_metadata,
+        }
 
         if input_channel == "whatsapp_text":
             if not normalized_message:
@@ -236,9 +269,7 @@ class ExtractRequestSerializer(serializers.Serializer):
                 "message_sid": message_sid,
                 "media_url": None,
                 "media_content_type": None,
-                "button_payload": button_payload,
-                "button_text": button_text,
-                "button_type": button_type,
+                **common_fields,
             }
 
         media_url = self._parse_media_url(payload, required=True)
@@ -260,9 +291,7 @@ class ExtractRequestSerializer(serializers.Serializer):
             "message_sid": message_sid,
             "media_url": media_url,
             "media_content_type": media_content_type,
-            "button_payload": button_payload,
-            "button_text": button_text,
-            "button_type": button_type,
+            **common_fields,
         }
 
 
@@ -284,6 +313,7 @@ class ExtractResponseSerializer(serializers.Serializer):
     preferred_phone = serializers.CharField(allow_null=True, required=False)
     reply_mode = serializers.CharField()
     send_booking_link = serializers.BooleanField()
+    booking_link_sent = serializers.BooleanField()
     booking_link = serializers.CharField(allow_null=True)
     transcript = serializers.CharField(required=False, allow_null=True)
     language_command_action = serializers.CharField(required=False, allow_null=True)
@@ -295,6 +325,113 @@ class ExtractResponseSerializer(serializers.Serializer):
         if "language_command_action" not in instance:
             data.pop("language_command_action", None)
         return data
+
+
+class VoiceCallCompletedRequestSerializer(serializers.Serializer):
+    """Request validation for LiveKit post-call completion events."""
+
+    event = serializers.CharField(trim_whitespace=False)
+    event_id = serializers.CharField(trim_whitespace=False)
+    call_id = serializers.CharField(trim_whitespace=False)
+    customer_phone = serializers.CharField(trim_whitespace=False)
+    whatsapp_number = serializers.CharField(trim_whitespace=False)
+    project_type = serializers.CharField(trim_whitespace=False)
+    requirements = serializers.CharField(trim_whitespace=False)
+    referral_source = serializers.CharField(trim_whitespace=False)
+    whatsapp_confirmed = serializers.BooleanField()
+    preferred_phone = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        trim_whitespace=False,
+    )
+    send_booking_link = serializers.BooleanField()
+
+    def _normalize_e164(self, value: str, *, field_name: str) -> str:
+        normalized_phone = "".join(value.split())
+        if not is_valid_e164_phone_number(normalized_phone):
+            raise serializers.ValidationError(f"Invalid {field_name}.")
+        return normalized_phone
+
+    def validate_event(self, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("event is required.")
+        if normalized != VOICE_CALL_COMPLETED_EVENT:
+            raise serializers.ValidationError("Unsupported event.")
+        return normalized
+
+    def validate_event_id(self, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("event_id is required.")
+        return normalized
+
+    def validate_call_id(self, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("call_id is required.")
+        return normalized
+
+    def validate_customer_phone(self, value: str) -> str:
+        return self._normalize_e164(value, field_name="customer_phone")
+
+    def validate_whatsapp_number(self, value: str) -> str:
+        return self._normalize_e164(value, field_name="whatsapp_number")
+
+    def validate_project_type(self, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in VALID_PROJECT_TYPES:
+            raise serializers.ValidationError("Invalid project_type.")
+        return normalized
+
+    def validate_requirements(self, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("requirements is required.")
+        return normalized
+
+    def validate_referral_source(self, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise serializers.ValidationError("referral_source is required.")
+        return normalized
+
+    def validate_preferred_phone(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        return self._normalize_e164(normalized, field_name="preferred_phone")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        payload = self.initial_data
+        if not isinstance(payload, dict):
+            raise serializers.ValidationError("Request payload must be a JSON object.")
+
+        extra_keys = set(payload) - ALLOWED_VOICE_CALL_COMPLETED_FIELDS
+        if extra_keys:
+            raise serializers.ValidationError("Unexpected request fields.")
+
+        missing_keys = ALLOWED_VOICE_CALL_COMPLETED_FIELDS - set(payload)
+        if missing_keys:
+            raise serializers.ValidationError("Missing required request fields.")
+
+        return attrs
+
+
+class VoiceCallCompletedResponseSerializer(serializers.Serializer):
+    """Response contract for voice-call completion events."""
+
+    status = serializers.CharField()
+    event_id = serializers.CharField()
+    call_id = serializers.CharField()
+    accepted_fields = serializers.DictField(child=serializers.JSONField())
+    qualification_status = serializers.CharField()
+    send_booking_link = serializers.BooleanField()
+    booking_link_sent = serializers.BooleanField()
+    booking_link = serializers.CharField(allow_null=True)
 
 
 class RenderAudioRequestSerializer(serializers.Serializer):

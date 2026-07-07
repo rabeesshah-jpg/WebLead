@@ -38,6 +38,9 @@ class PersistenceBackend(Protocol):
     def clear_conversations(self) -> None:
         ...
 
+    def clear_conversation_for_customer(self, whatsapp_number: str) -> None:
+        ...
+
     def get_turn_response(self, message_sid: str) -> dict[str, Any] | None:
         ...
 
@@ -91,6 +94,17 @@ class InMemoryPersistenceBackend:
         with self._lock:
             self._conversations.clear()
             self._conversation_history.clear()
+
+    def clear_conversation_for_customer(self, whatsapp_number: str) -> None:
+        started = time.perf_counter()
+        with self._lock:
+            self._conversations.pop(whatsapp_number, None)
+            self._conversation_history.pop(whatsapp_number, None)
+        log_latency_step(
+            "persistence_conversation_clear_customer",
+            elapsed_ms_since(started),
+            backend="memory",
+        )
 
     def get_conversation_history(self, whatsapp_number: str) -> list[dict[str, str]]:
         with self._lock:
@@ -262,6 +276,16 @@ class RedisPersistenceBackend:
             self._client.delete(key)
         for key in self._client.scan_iter(match="qualification:history:*"):
             self._client.delete(key)
+
+    def clear_conversation_for_customer(self, whatsapp_number: str) -> None:
+        started = time.perf_counter()
+        self._client.delete(self._conversation_key(whatsapp_number))
+        self._client.delete(self._conversation_history_key(whatsapp_number))
+        log_latency_step(
+            "persistence_conversation_clear_customer",
+            elapsed_ms_since(started),
+            backend="redis",
+        )
 
     def get_conversation_history(self, whatsapp_number: str) -> list[dict[str, str]]:
         raw = self._client.get(self._conversation_history_key(whatsapp_number))

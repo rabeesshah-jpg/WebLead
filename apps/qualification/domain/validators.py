@@ -9,6 +9,23 @@ _PHONE_FORMATTING_PATTERN = re.compile(r"[^\d+]+")
 _DIRECT_PHONE_REPLY_PATTERN = re.compile(r"^[\d+\s().-]+$")
 
 
+def normalize_whatsapp_session_number(whatsapp_number: str) -> str:
+    """
+    Normalize a WhatsApp customer number to canonical E.164 for session lookup.
+
+    Twilio may send ``whatsapp:+15551234567`` while internal APIs may include
+    spaces. All session and persistence keys must use one canonical value per
+    customer so state never splits across duplicate rows or cache keys.
+    """
+    normalized = whatsapp_number.strip()
+    if normalized.lower().startswith("whatsapp:"):
+        normalized = normalized.split(":", 1)[1]
+    normalized = "".join(normalized.split())
+    if not is_valid_e164_phone_number(normalized):
+        raise ValueError("Invalid whatsapp_number.")
+    return normalized
+
+
 def is_valid_e164_phone_number(value: str) -> bool:
     """
     Return True only when value matches the project's existing E.164 contract.
