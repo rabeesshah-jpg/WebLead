@@ -6,6 +6,8 @@ import logging
 import time
 from typing import Any, Callable
 
+from django.utils import timezone
+
 from apps.qualification.channels import finalize_turn_response
 from apps.qualification.conversation_flow import (
     build_completed_retry_response,
@@ -34,6 +36,7 @@ from apps.qualification.domain.logging_utils import (
 )
 from apps.qualification.domain.validators import normalize_whatsapp_session_number
 from apps.qualification.domain.onboarding import (
+    compute_inactivity_gap_seconds,
     maybe_prepend_onboarding_intro,
     should_reset_qualification_after_inactivity,
 )
@@ -495,12 +498,33 @@ class ExtractService:
 
         session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
         session.refresh_from_db()
-        if should_reset_qualification_after_inactivity(session):
+        previous_last_activity_at = session.last_message_at
+        inactivity_gap_seconds = compute_inactivity_gap_seconds(session)
+        idle_reset_triggered = should_reset_qualification_after_inactivity(session)
+        state_before_reset = dict(get_accepted_fields(whatsapp_number))
+        if idle_reset_triggered:
             from apps.qualification.api.logging import log_qualification_event
 
             reset_qualification_progress_after_inactivity(
                 whatsapp_number=whatsapp_number,
                 session=session,
+            )
+            session.refresh_from_db()
+            log_qualification_event(
+                "qualification_idle_reset",
+                whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+                message_sid_prefix=message_sid_prefix(message_sid),
+                previous_last_activity_at=(
+                    previous_last_activity_at.isoformat()
+                    if previous_last_activity_at is not None
+                    else None
+                ),
+                current_message_time=timezone.now().isoformat(),
+                inactivity_gap_seconds=inactivity_gap_seconds,
+                idle_reset_triggered=True,
+                state_before_reset=state_before_reset,
+                state_after_reset={},
+                onboarding_allowed=True,
             )
             log_qualification_event(
                 "qualification_reset_after_inactivity",
@@ -527,18 +551,26 @@ class ExtractService:
                 message_sid=message_sid,
             )
 
+        if idle_reset_triggered:
+            turn_response = dict(turn_response)
+            turn_response["idle_reset_triggered"] = True
+            turn_response.pop("skip_onboarding_intro", None)
+
         finalize_started = time.perf_counter()
         turn_response = maybe_prepend_onboarding_intro(
             turn_response,
             whatsapp_number=whatsapp_number,
             language=conversation_language,
             input_channel=input_channel,
+            session=session,
         )
         response_payload = finalize_turn_response(
             turn_response,
             input_channel=input_channel,
             transcript=transcript,
             conversation_language=conversation_language,
+            whatsapp_number=whatsapp_number,
+            user_message=message,
         )
         log_latency_step(
             "finalize_turn_response",

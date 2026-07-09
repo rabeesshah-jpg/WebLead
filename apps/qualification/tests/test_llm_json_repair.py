@@ -139,8 +139,10 @@ def test_handle_qualification_turn_returns_safe_fallback_on_parse_failure():
             whatsapp_number=VALID_WHATSAPP_NUMBER,
             message=OPENROUTER_FALLBACK_MESSAGE,
         )
-    expected_reply = get_customer_message(language="en", key="llm_parse_fallback")
+    expected_reply = get_customer_message(language="en", key="project_type")
     assert response["reply_text"] == expected_reply
+    assert "I've noted that" not in response["reply_text"]
+    assert "May I ask one more quick question" not in response["reply_text"]
     assert response["llm_parse_failed"] is True
     assert response["complete"] is False
     assert response["qualification_status"] == "in_progress"
@@ -167,7 +169,8 @@ def test_invalid_llm_json_returns_http_200_not_502(client: Client):
     assert body["llm_parse_failed"] is True
     assert body["complete"] is False
     assert body["whatsapp_text"] == ""
-    assert "team will guide you properly in the meeting" in body["reply_text"]
+    assert "new website" in body["reply_text"]
+    assert "I've noted that" not in body["reply_text"]
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)

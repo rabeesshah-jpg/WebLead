@@ -19,9 +19,8 @@ pytestmark = pytest.mark.django_db
 
 def test_english_message_lookup_returns_existing_english_text():
     assert get_customer_message(language=LANGUAGE_ENGLISH, key="project_type") == (
-        "*To get started:*\n"
-        "Are you looking for a *new website*, an *upgrade to your existing website*, "
-        "or *both*?"
+        "Are you looking for a new website, an upgrade to your existing website, "
+        "or both?"
     )
     assert (
         get_customer_message(language=LANGUAGE_ENGLISH, key="preferred_phone")
@@ -29,16 +28,15 @@ def test_english_message_lookup_returns_existing_english_text():
     )
 
 
-def test_onboarding_and_welcome_back_copy_uses_whatsapp_formatting():
+def test_onboarding_and_welcome_back_copy_uses_lightweight_formatting():
     intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
     welcome = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_welcome_back")
-    assert intro.startswith("*Hi, welcome!*")
-    assert "Send *M* to open the menu" in intro
-    assert "send *M* and choose *Change language*" in intro
-    assert "reply by *text* or *voice note*" in intro
-    assert welcome.startswith("*Welcome back!*")
-    assert "Send *M* to open the menu" in welcome
-    assert "send *M* and choose *Change language*" in welcome
+    assert intro.startswith("Hi, this is Noura from Good Websites!")
+    assert "To get started" in intro
+    assert "Send M to open the menu" in intro
+    assert "*" not in intro
+    assert welcome == "Welcome back! Let's continue."
+    assert "*" not in welcome
 
 
 def test_arabic_message_lookup_returns_arabic_text():

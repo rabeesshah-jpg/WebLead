@@ -19,6 +19,8 @@ def build_faq_answer(
         parts.append(get_customer_message(language=language, key="faq_location"))
     if classification.user_question_pricing:
         parts.append(get_customer_message(language=language, key="faq_pricing"))
+    if classification.user_question_timeline:
+        parts.append(get_customer_message(language=language, key="faq_timeline"))
     if not parts:
         return None
     return " ".join(parts)

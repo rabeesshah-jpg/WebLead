@@ -8,6 +8,8 @@ from typing import Any, Literal
 from django.conf import settings
 from django.utils import timezone
 
+from apps.qualification.conversation_state import get_accepted_fields
+from apps.qualification.conversation_flow import qualification_has_started
 from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.services.conversation_session_service import (
@@ -19,9 +21,22 @@ OnboardingIntroKind = Literal["first_contact", "welcome_back"]
 
 
 def onboarding_reintro_threshold() -> timedelta:
-    """Idle gap after which a welcome-back re-intro is shown (default 2 hours)."""
-    seconds = getattr(settings, "ONBOARDING_REINTRO_AFTER_SECONDS", 7200)
+    """Idle gap after which the next inbound message starts a fresh qualification session."""
+    seconds = int(getattr(settings, "ONBOARDING_REINTRO_AFTER_SECONDS", 60))
     return timedelta(seconds=seconds)
+
+
+def compute_inactivity_gap_seconds(
+    session: WhatsAppConversationSession,
+    *,
+    now: datetime | None = None,
+) -> int | None:
+    """Return seconds since the previous inbound message, or None when unknown."""
+    last_inbound_at = session.last_message_at
+    if last_inbound_at is None:
+        return None
+    current = now or timezone.now()
+    return int((current - last_inbound_at).total_seconds())
 
 
 def should_reset_qualification_after_inactivity(
@@ -30,7 +45,11 @@ def should_reset_qualification_after_inactivity(
     now: datetime | None = None,
 ) -> bool:
     """Return True when idle time exceeds the welcome-back threshold."""
-    return resolve_onboarding_intro_kind(session, now=now) == "welcome_back"
+    last_inbound_at = session.last_message_at
+    if last_inbound_at is None:
+        return False
+    current = now or timezone.now()
+    return current - last_inbound_at >= onboarding_reintro_threshold()
 
 
 def resolve_onboarding_intro_kind(
@@ -39,21 +58,13 @@ def resolve_onboarding_intro_kind(
     now: datetime | None = None,
 ) -> OnboardingIntroKind | None:
     """
-    Decide whether to prepend onboarding / welcome-back text.
+    Decide whether to prepend first-contact onboarding text.
 
-    Evaluates against ``session.last_message_at`` *before* it is updated for this
-    inbound turn. Returns ``None`` when no intro should be shown.
+    Full help/menu instructions are not prepended after idle gaps or persona
+    interactions. Welcome-back re-intros are handled separately when needed.
     """
     if not session.onboarding_intro_sent:
         return "first_contact"
-
-    last_inbound_at = session.last_message_at
-    if last_inbound_at is None:
-        return None
-
-    current = now or timezone.now()
-    if current - last_inbound_at >= onboarding_reintro_threshold():
-        return "welcome_back"
     return None
 
 
@@ -120,9 +131,18 @@ def maybe_prepend_onboarding_intro(
     }:
         return response
 
+    if response.get("skip_onboarding_intro") and not response.get("idle_reset_triggered"):
+        return response
+
     reply_text = str(response.get("reply_text") or "")
     if not reply_text.strip():
         return response
+
+    idle_reset_triggered = bool(response.get("idle_reset_triggered"))
+    response_fields = response.get("accepted_fields")
+    qualification_started = (
+        isinstance(response_fields, dict) and qualification_has_started(response_fields)
+    ) or qualification_has_started(get_accepted_fields(whatsapp_number))
 
     active_session = session
     if active_session is None:
@@ -130,6 +150,11 @@ def maybe_prepend_onboarding_intro(
             whatsapp_number=whatsapp_number,
         )
         active_session.refresh_from_db()
+
+    if qualification_started and not idle_reset_triggered:
+        if not active_session.onboarding_intro_sent:
+            mark_onboarding_intro_sent(active_session, now=now)
+        return response
 
     kind = resolve_onboarding_intro_kind(active_session, now=now)
     if kind is None:

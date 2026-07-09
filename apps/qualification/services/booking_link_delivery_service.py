@@ -131,6 +131,17 @@ def deliver_booking_link_whatsapp_text(
     return True
 
 
+def mark_booking_link_sent_for_text_completion(
+    *,
+    session: WhatsAppConversationSession,
+    whatsapp_number: str,
+) -> None:
+    """Persist booking-link delivery after the URL is included in a text reply."""
+    if booking_link_already_sent(session=session):
+        return
+    mark_booking_link_sent(session)
+
+
 def ensure_booking_link_delivery_on_response(
     response_payload: dict[str, Any],
     *,
@@ -147,10 +158,35 @@ def ensure_booking_link_delivery_on_response(
         return response_payload
     if not response_payload.get("send_booking_link"):
         return response_payload
-    if response_payload.get("booking_link_sent"):
-        return response_payload
+
+    session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
+    session.refresh_from_db()
+    if booking_link_already_sent(session=session):
+        log_qualification_event(
+            "booking_link_send_blocked",
+            whatsapp_number_prefix=whatsapp_number[:6],
+            message_sid=message_sid,
+            input_channel=input_channel,
+            conversation_state=response_payload.get("conversation_state", "BOOKING_LINK_SENT"),
+            booking_link_sent=True,
+        )
+        updated = dict(response_payload)
+        updated["send_booking_link"] = False
+        updated["booking_link_sent"] = True
+        return updated
+
+    log_qualification_event(
+        "attempted_booking_link_send",
+        whatsapp_number_prefix=whatsapp_number[:6],
+        message_sid=message_sid,
+        input_channel=input_channel,
+        conversation_state=response_payload.get("conversation_state"),
+    )
 
     updated = dict(response_payload)
+    if updated.get("booking_link_sent"):
+        return updated
+
     try:
         updated["booking_link_sent"] = deliver_booking_link_whatsapp_text(
             whatsapp_number=whatsapp_number,
@@ -159,6 +195,16 @@ def ensure_booking_link_delivery_on_response(
             message_sid=message_sid,
             input_channel=input_channel,
         )
+        if updated["booking_link_sent"]:
+            updated["conversation_state"] = "BOOKING_LINK_SENT"
+            log_qualification_event(
+                "booking_link_sent",
+                whatsapp_number_prefix=whatsapp_number[:6],
+                message_sid=message_sid,
+                input_channel=input_channel,
+                conversation_state="BOOKING_LINK_SENT",
+                delivery="whatsapp_text",
+            )
     except BookingLinkDeliveryError as exc:
         updated["booking_link_sent"] = False
         log_qualification_event(

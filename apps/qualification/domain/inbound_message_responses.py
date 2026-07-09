@@ -10,6 +10,7 @@ from apps.qualification.domain.inbound_message_classification import (
 )
 from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.domain.qualification_faq import build_faq_answer
+from apps.qualification.domain.qualification_questions import get_qualification_question_text
 
 
 def _confirmation_also_reask_key(*, for_voice: bool) -> str:
@@ -94,20 +95,102 @@ def build_whatsapp_confirmation_rich_reply(
     return get_customer_message(language=language, key="whatsapp_confirmation_unclear")
 
 
+def _persona_reply_part(classification: InboundMessageClassification, *, language: str) -> str:
+    if classification.about_yourself_question:
+        return get_customer_message(language=language, key="small_talk_about")
+    if classification.identity_question:
+        return get_customer_message(language=language, key="small_talk_identity")
+    if classification.role_question:
+        if classification.role_question_kind == "what_do_you_do":
+            return get_customer_message(language=language, key="small_talk_role_alt")
+        return get_customer_message(language=language, key="small_talk_role")
+    if classification.small_talk_greeting and classification.small_talk_wellbeing:
+        return get_customer_message(language=language, key="small_talk_greeting_wellbeing")
+    if classification.small_talk_wellbeing:
+        return get_customer_message(language=language, key="small_talk_wellbeing")
+    if classification.small_talk_greeting:
+        return get_customer_message(language=language, key="small_talk_greeting")
+    return ""
+
+
+def build_small_talk_reply(
+    classification: InboundMessageClassification,
+    *,
+    language: str,
+    next_field: str | None,
+    whatsapp_number: str,
+) -> str:
+    """Build a friendly persona reply that continues the current qualification question."""
+    parts: list[str] = []
+    persona_part = _persona_reply_part(classification, language=language)
+    if persona_part:
+        parts.append(persona_part)
+
+    if next_field:
+        parts.append(
+            get_qualification_question_text(
+                language=language,
+                field=next_field,
+                repeat=True,
+                whatsapp_number=whatsapp_number,
+            )
+        )
+    return " ".join(parts)
+
+
+_CAPTURE_TRANSITION_KEYS: dict[str, str] = {
+    "project_type": "after_project_type_captured",
+    "requirements": "after_requirements_captured",
+    "referral_source": "after_referral_source_captured",
+}
+
+
+def build_reply_after_field_capture(
+    *,
+    captured_field: str,
+    next_field: str,
+    language: str,
+    whatsapp_number: str,
+) -> str:
+    """Build a short acknowledgment plus the next qualification question."""
+    transition_key = _CAPTURE_TRANSITION_KEYS.get(captured_field)
+    question = get_qualification_question_text(
+        language=language,
+        field=next_field,
+        repeat=False,
+        whatsapp_number=whatsapp_number,
+    )
+    if transition_key:
+        transition = get_customer_message(language=language, key=transition_key)
+        return f"{transition} {question}"
+    return question
+
+
 def build_rich_qualification_reply(
     classification: InboundMessageClassification,
     *,
     language: str,
     saved_enrichment: bool,
     next_field: str | None,
+    whatsapp_number: str | None = None,
+    qualification_in_progress: bool = False,
 ) -> str:
     """Build an in-progress qualification reply before falling back to OpenRouter."""
     if classification.irrelevant_or_unclear and not saved_enrichment and not classification.has_user_question:
-        parts = [
-            get_customer_message(language=language, key="irrelevant_redirect"),
-        ]
+        parts: list[str] = []
+        if not qualification_in_progress:
+            parts.append(
+                get_customer_message(language=language, key="irrelevant_redirect"),
+            )
         if next_field:
-            parts.append(get_customer_message(language=language, key=next_field))
+            parts.append(
+                get_qualification_question_text(
+                    language=language,
+                    field=next_field,
+                    repeat=True,
+                    whatsapp_number=whatsapp_number,
+                )
+            )
         return " ".join(parts)
 
     parts: list[str] = []
@@ -121,7 +204,14 @@ def build_rich_qualification_reply(
     if classification.unsupported_or_unclear_question:
         parts.append(get_customer_message(language=language, key="faq_unsupported"))
     if next_field:
-        parts.append(get_customer_message(language=language, key=next_field))
+        parts.append(
+            get_qualification_question_text(
+                language=language,
+                field=next_field,
+                repeat=True,
+                whatsapp_number=whatsapp_number,
+            )
+        )
     if parts:
         return " ".join(parts)
     return get_customer_message(language=language, key="generic_retry")

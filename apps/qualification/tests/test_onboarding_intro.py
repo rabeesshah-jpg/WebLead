@@ -154,17 +154,12 @@ def test_first_text_message_sends_onboarding_intro_once(
 @patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="hello")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_first_voice_note_sends_voice_safe_onboarding_intro(
+def test_first_voice_note_small_talk_skips_onboarding_intro(
     mock_extract,
     mock_transcribe,
     mock_download,
     client,
 ):
-    mock_extract.return_value = QualificationFieldFilterResult(
-        accepted_fields={"project_type": "new_website"},
-        rejected_fields=(),
-        human_handoff_requested=False,
-    )
     _seed_english_session(onboarded=False)
 
     response = _post(
@@ -179,23 +174,18 @@ def test_first_voice_note_sends_voice_safe_onboarding_intro(
     )
     body = response.json()
     text_intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
-    voice_intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro_voice")
     assert response.status_code == 200
-    assert text_intro in body["whatsapp_text"]
-    assert "Send *M* to open the menu" in body["whatsapp_text"]
-    assert body["spoken_text"] == voice_intro
+    assert text_intro not in body["whatsapp_text"]
+    assert "Hi!" in body["reply_text"]
+    assert "new website" in body["whatsapp_text"].lower()
+    assert body["spoken_text"] == body["reply_text"]
     assert "To open the menu" not in body["spoken_text"]
-    assert "To change your language" not in body["spoken_text"]
-    assert "To change language" not in body["spoken_text"]
+    assert "Send M to open the menu" not in body["whatsapp_text"]
     assert len(body["spoken_text"]) <= 180
-    assert body["reply_text"] == body["spoken_text"]
-    assert body["reply_text"] != body["whatsapp_text"]
     assert spoken_text_contains_url(body["spoken_text"]) is False
-    session = WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER)
-    assert session.onboarding_intro_sent is True
     mock_transcribe.assert_called_once()
     mock_download.assert_called_once()
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
 
 
 @override_settings(**SETTINGS)
@@ -223,11 +213,12 @@ def test_first_voice_website_request_asks_project_question_not_phone(
     body = response.json()
     text_intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
     assert response.status_code == 200
-    assert text_intro in body["whatsapp_text"]
+    assert text_intro not in body["whatsapp_text"]
+    assert "How to use this chat" not in body["whatsapp_text"]
     assert body["next_field"] != "whatsapp_confirmed"
     assert "best number to reach you" not in body["spoken_text"].lower()
     assert "To open the menu" not in body["spoken_text"]
-    assert "I've noted that" in body["spoken_text"]
+    assert "How did you hear" in body["spoken_text"] or "Thank you" in body["spoken_text"]
     assert len(body["spoken_text"]) <= 180
     mock_extract.assert_not_called()
     fields = get_accepted_fields(WHATSAPP_NUMBER)
@@ -259,7 +250,7 @@ def test_finalize_voice_turn_uses_spoken_text_not_reply_text_for_tts():
     assert finalized["spoken_text"] == voice_intro
     assert finalized["reply_text"] == voice_intro
     assert finalized["whatsapp_text"] == whatsapp_text
-    assert "Send *M* to open the menu" in finalized["whatsapp_text"]
+    assert "Send M to open the menu" in finalized["whatsapp_text"]
     assert "To open the menu" not in finalized["spoken_text"]
 
 
@@ -319,7 +310,7 @@ def test_message_within_two_hours_skips_onboarding_intro(
 @override_settings(**SETTINGS)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
-def test_message_after_two_hours_shows_welcome_back_without_menu(
+def test_message_after_two_hours_resets_and_shows_onboarding(
     mock_send_menu,
     mock_extract,
     client,
@@ -344,16 +335,16 @@ def test_message_after_two_hours_shows_welcome_back_without_menu(
     )
     body = response.json()
     welcome = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_welcome_back")
-    question = get_customer_message(language=LANGUAGE_ENGLISH, key="project_type")
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
     assert response.status_code == 200
     assert body.get("status") != "awaiting_menu_selection"
-    assert welcome in body["reply_text"]
-    assert question in body["reply_text"]
+    assert welcome not in body["reply_text"]
+    assert "How to use this chat" in body["reply_text"]
+    assert intro in body["reply_text"]
     assert body["next_field"] == "project_type"
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
+    assert body.get("idle_reset_triggered") is True
     mock_send_menu.assert_not_called()
-    session = WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER)
-    assert session.last_onboarding_intro_at is not None
 
 
 @override_settings(**SETTINGS)
@@ -361,7 +352,7 @@ def test_message_after_two_hours_shows_welcome_back_without_menu(
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="hello again")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
-def test_voice_after_two_hours_uses_welcome_back_voice_intro(
+def test_voice_after_two_hours_resets_and_shows_onboarding(
     mock_send_menu,
     mock_extract,
     mock_transcribe,
@@ -394,20 +385,15 @@ def test_voice_after_two_hours_uses_welcome_back_voice_intro(
         language=LANGUAGE_ENGLISH,
         key="onboarding_welcome_back",
     )
-    welcome_voice = get_customer_message(
-        language=LANGUAGE_ENGLISH,
-        key="onboarding_welcome_back_voice",
-    )
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
     assert response.status_code == 200
     assert body.get("status") != "awaiting_menu_selection"
-    assert welcome_text in body["whatsapp_text"]
-    assert body["spoken_text"] == welcome_voice
+    assert welcome_text not in body["whatsapp_text"]
+    assert intro in body["whatsapp_text"]
     assert body["next_field"] == "project_type"
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
-    assert "How did you hear about us" not in body["spoken_text"]
-    assert "referral" not in body["spoken_text"].lower()
+    assert body.get("idle_reset_triggered") is True
     assert "To open the menu" not in body["spoken_text"]
-    assert len(body["spoken_text"]) <= 180
     mock_send_menu.assert_not_called()
     mock_transcribe.assert_called_once()
 
@@ -448,6 +434,9 @@ def test_short_inactivity_threshold_clears_qualification_fields(
     assert body["next_field"] == "project_type"
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
     assert body["qualification_status"] == "in_progress"
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
+    assert intro in body["reply_text"]
+    assert body.get("idle_reset_triggered") is True
     mock_send_menu.assert_not_called()
 
 
@@ -456,7 +445,7 @@ def test_short_inactivity_threshold_clears_qualification_fields(
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="I am back now")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
-def test_voice_after_inactivity_returns_short_spoken_text_only(
+def test_voice_after_inactivity_returns_qualification_reply_without_welcome_back(
     mock_send_menu,
     mock_extract,
     mock_transcribe,
@@ -492,22 +481,13 @@ def test_voice_after_inactivity_returns_short_spoken_text_only(
         },
     )
     body = response.json()
-    welcome_text = get_customer_message(
-        language=LANGUAGE_ENGLISH,
-        key="onboarding_welcome_back",
-    )
-    welcome_voice = get_customer_message(
-        language=LANGUAGE_ENGLISH,
-        key="onboarding_welcome_back_voice",
-    )
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
 
     assert response.status_code == 200
-    assert welcome_text in body["whatsapp_text"]
-    assert body["spoken_text"] == welcome_voice
+    assert intro in body["whatsapp_text"]
     assert body["next_field"] == "project_type"
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
-    assert "How did you hear about us" not in body["spoken_text"]
-    assert "I've noted that" not in body["spoken_text"]
+    assert body.get("idle_reset_triggered") is True
     mock_transcribe.assert_called_once()
 
 
@@ -533,6 +513,73 @@ def test_inactivity_reset_preserves_message_sid_idempotency_cache(mock_extract, 
     assert second.status_code == 200
     assert first.json() == second.json()
     mock_extract.assert_called_once()
+
+
+@override_settings(**{**SETTINGS, "ONBOARDING_REINTRO_AFTER_SECONDS": 60})
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_hello_brother_after_idle_reset_shows_onboarding(mock_extract, client):
+    mock_extract.return_value = QualificationFieldFilterResult(
+        accepted_fields={},
+        rejected_fields=(),
+        human_handoff_requested=False,
+    )
+    _seed_english_session(
+        onboarded=True,
+        last_message_at=timezone.now() - timedelta(seconds=61),
+    )
+    save_accepted_fields(
+        WHATSAPP_NUMBER,
+        {
+            "project_type": "new_website",
+            "requirements": "ecommerce",
+            "referral_source": "Instagram",
+            "whatsapp_confirmed": True,
+            "preferred_phone": WHATSAPP_NUMBER,
+        },
+    )
+
+    response = _post(
+        client,
+        _text(message="Hello brother", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce63"),
+    )
+    body = response.json()
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
+
+    assert response.status_code == 200
+    assert intro in body["reply_text"]
+    assert body.get("idle_reset_triggered") is True
+    assert get_accepted_fields(WHATSAPP_NUMBER) == {}
+    mock_extract.assert_not_called()
+
+
+@override_settings(**{**SETTINGS, "ONBOARDING_REINTRO_AFTER_SECONDS": 300})
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_hello_brother_within_idle_window_skips_onboarding(mock_extract, client):
+    mock_extract.return_value = QualificationFieldFilterResult(
+        accepted_fields={},
+        rejected_fields=(),
+        human_handoff_requested=False,
+    )
+    _seed_english_session(
+        onboarded=True,
+        last_message_at=timezone.now() - timedelta(seconds=30),
+    )
+    save_accepted_fields(WHATSAPP_NUMBER, {"project_type": "new_website"})
+
+    response = _post(
+        client,
+        _text(message="Hello brother", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce64"),
+    )
+    body = response.json()
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
+
+    assert response.status_code == 200
+    assert intro not in body["reply_text"]
+    assert body.get("idle_reset_triggered") is not True
+    assert body["accepted_fields"]["project_type"] == "new_website"
+    assert body["reply_text"].startswith("Hi!")
+    assert "May I know what type of website help you need" in body["reply_text"]
+    mock_extract.assert_not_called()
 
 
 @override_settings(**SETTINGS)

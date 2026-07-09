@@ -373,8 +373,9 @@ def _load_onboarding_reintro_after_seconds() -> int:
     return timeout_seconds
 
 
-# Idle gap after which returning customers get welcome-back re-intro (2 hours).
+# Idle gap after which returning customers restart qualification and see onboarding again.
 ONBOARDING_REINTRO_AFTER_SECONDS = _load_onboarding_reintro_after_seconds()
+SESSION_IDLE_RESET_SECONDS = ONBOARDING_REINTRO_AFTER_SECONDS
 
 _WHATSAPP_MENU_PENDING_SECONDS_ERROR = (
     "WHATSAPP_MENU_PENDING_SECONDS must be a positive integer."

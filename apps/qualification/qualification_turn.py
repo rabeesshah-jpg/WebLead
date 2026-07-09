@@ -7,8 +7,10 @@ from apps.qualification.conversation_flow import (
     build_turn_response,
     is_qualification_complete,
     should_ask_phone_confirmation,
+    try_handle_help_request_turn,
     try_handle_preferred_phone_turn,
     try_handle_rich_inbound_qualification_turn,
+    try_handle_small_talk_qualification_turn,
     try_handle_whatsapp_confirmation_turn,
 )
 from apps.qualification.conversation_state import (
@@ -99,6 +101,32 @@ def handle_qualification_turn(
             response=response,
         )
         return response
+
+    help_response = try_handle_help_request_turn(
+        whatsapp_number=whatsapp_number,
+        message=message,
+        language=conversation_language,
+    )
+    if help_response is not None:
+        _record_conversation_turn(
+            whatsapp_number=whatsapp_number,
+            message=message,
+            response=help_response,
+        )
+        return help_response
+
+    small_talk_response = try_handle_small_talk_qualification_turn(
+        whatsapp_number=whatsapp_number,
+        message=message,
+        language=conversation_language,
+    )
+    if small_talk_response is not None:
+        _record_conversation_turn(
+            whatsapp_number=whatsapp_number,
+            message=message,
+            response=small_talk_response,
+        )
+        return small_talk_response
 
     confirmation_response = try_handle_whatsapp_confirmation_turn(
         whatsapp_number=whatsapp_number,

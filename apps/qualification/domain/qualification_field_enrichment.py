@@ -82,6 +82,8 @@ def apply_classification_to_fields(
     classification: InboundMessageClassification,
 ) -> dict[str, Any]:
     """Return field updates derived from an inbound message classification."""
+    if classification.is_small_talk_or_identity:
+        return {}
     if not classification.service_request and not classification.requirement_detail:
         return {}
 

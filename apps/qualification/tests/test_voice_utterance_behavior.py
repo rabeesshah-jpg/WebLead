@@ -235,7 +235,7 @@ def test_unsupported_question_uses_meeting_fallback(client: Client):
         },
     )
     body = response.json()
-    assert "team will guide you properly in the meeting" in body["reply_text"]
+    assert "website specialist" in body["reply_text"]
     assert body["next_field"] == "referral_source"
 
 

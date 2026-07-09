@@ -29,7 +29,18 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
     "faq_services",
     "faq_location",
     "faq_pricing",
+    "faq_timeline",
     "faq_unsupported",
+    "small_talk_greeting",
+    "small_talk_wellbeing",
+    "small_talk_greeting_wellbeing",
+    "small_talk_identity",
+    "small_talk_about",
+    "small_talk_role",
+    "small_talk_role_alt",
+    "project_type_variant_1",
+    "project_type_variant_2",
+    "project_type_variant_3",
     "llm_parse_fallback",
     "requirement_acknowledged",
     "irrelevant_redirect",
@@ -50,19 +61,39 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
     "onboarding_intro_voice",
     "onboarding_welcome_back",
     "onboarding_welcome_back_voice",
+    "after_project_type_captured",
+    "after_requirements_captured",
+    "after_referral_source_captured",
+    "post_booking_default",
+    "post_booking_greeting",
+    "post_booking_wellbeing",
+    "post_booking_greeting_wellbeing",
+    "post_booking_thanks",
+    "post_booking_exit",
+    "post_booking_resend_request",
 )
 
 QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
     "en": {
         "project_type": (
-            "*To get started:*\n"
-            "Are you looking for a *new website*, an *upgrade to your existing website*, "
-            "or *both*?"
+            "Are you looking for a new website, an upgrade to your existing website, "
+            "or both?"
         ),
-        "requirements": "What are you specifically looking for?",
-        "referral_source": "Thank you. How did you hear about us?",
+        "project_type_variant_1": (
+            "Let's start with one quick question: are you looking for a new website, "
+            "an upgrade, or both?"
+        ),
+        "project_type_variant_2": (
+            "Please choose one: new website, upgrade existing website, or both."
+        ),
+        "project_type_variant_3": (
+            "First, are you looking for a new website, an upgrade to your existing "
+            "website, or both?"
+        ),
+        "requirements": "May I know what type of website help you need?",
+        "referral_source": "How did you hear about Good Websites?",
         "whatsapp_confirmed": (
-            "Thank you. Is this WhatsApp number the best number to reach you?"
+            "Is this the best contact number for our team to reach you?"
         ),
         "preferred_phone": "Please share the best phone number to reach you.",
         "preferred_phone_after_whatsapp_decline": (
@@ -86,16 +117,34 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         ),
         "faq_location": "We work remotely and can support clients online.",
         "faq_pricing": (
-            "Pricing depends on the scope, features, and timeline. Our team can guide "
-            "you properly in the meeting."
+            "A website specialist can guide you properly in the meeting."
+        ),
+        "faq_timeline": (
+            "Timeline depends on the project scope. A website specialist can guide you "
+            "properly in the meeting."
         ),
         "faq_unsupported": (
-            "That's a good question. I don't want to give you the wrong information "
-            "here, but our team will guide you properly in the meeting."
+            "That's a good question. A website specialist can guide you properly in "
+            "the meeting."
+        ),
+        "small_talk_greeting": "Hi!",
+        "small_talk_wellbeing": "I'm doing well, thanks for asking.",
+        "small_talk_greeting_wellbeing": "Hi, I'm doing well, thanks for asking.",
+        "small_talk_identity": "I'm Noura from Good Websites.",
+        "small_talk_about": (
+            "I'm Noura from Good Websites. I help with website inquiries and connect "
+            "customers with the right specialist."
+        ),
+        "small_talk_role": (
+            "I help Good Websites understand your website needs and connect you with "
+            "the right specialist."
+        ),
+        "small_talk_role_alt": (
+            "I help customers share their website requirements and connect with the "
+            "Good Websites team."
         ),
         "llm_parse_fallback": (
-            "Thank you, I've noted that. Our team will guide you properly in the "
-            "meeting. May I ask one more quick question?"
+            "Could you please provide a little more detail?"
         ),
         "requirement_acknowledged": "Thank you, I've noted that.",
         "irrelevant_redirect": (
@@ -134,41 +183,68 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "4. Talk to human"
         ),
         "restart_intro": (
-            "Sure, let's start again. Are you looking for a new website or to "
-            "upgrade your existing website?"
+            "Sure, let's start again. Are you looking for a new website, an upgrade to "
+            "your existing website, or both?"
         ),
         "onboarding_intro": (
-            "*Hi, welcome!* 👋\n"
+            "Hi, this is Noura from Good Websites!\n"
             "\n"
-            "I’ll ask a few quick questions so our team can understand your project "
-            "and send you the right booking link.\n"
+            "To get started, I'll ask a few quick questions so our team can understand "
+            "your project and guide you toward booking a meeting.\n"
             "\n"
-            "*How to use this chat:*\n"
-            "• Send *M* to open the menu\n"
-            "• To change language, send *M* and choose *Change language*\n"
-            "• You can reply by *text* or *voice note*"
+            "How to use this chat:\n"
+            "• Send M to open the menu\n"
+            "• To change language, send M and choose Change language\n"
+            "• You can reply by text or voice note"
         ),
         "onboarding_intro_voice": (
-            "Hi, welcome. I've sent the chat instructions in text. Let's continue."
+            "Hi, this is Noura from Good Websites. I've sent the chat instructions "
+            "in text. Let's continue."
         ),
-        "onboarding_welcome_back": (
-            "*Welcome back!* 👋\n"
-            "\n"
-            "I’ll continue from where we left off.\n"
-            "\n"
-            "*Quick reminders:*\n"
-            "• Send *M* to open the menu\n"
-            "• To change language, send *M* and choose *Change language*\n"
-            "• You can reply by *text* or *voice note*"
+        "onboarding_welcome_back": "Welcome back! Let's continue.",
+        "onboarding_welcome_back_voice": "Welcome back. Let's continue.",
+        "after_project_type_captured": "Great, thanks.",
+        "after_requirements_captured": "Thank you.",
+        "after_referral_source_captured": "Thanks.",
+        "post_booking_default": (
+            "Please use the booking link above whenever you're ready."
         ),
-        "onboarding_welcome_back_voice": (
-            "Welcome back. I've sent the quick reminders in text. Let's continue."
+        "post_booking_greeting": (
+            "Hi. Please use the booking link above whenever you're ready."
+        ),
+        "post_booking_wellbeing": (
+            "I'm doing well, thanks for asking. Please use the booking link above "
+            "whenever you're ready."
+        ),
+        "post_booking_greeting_wellbeing": (
+            "I'm doing well, thanks for asking. Please use the booking link above "
+            "whenever you're ready."
+        ),
+        "post_booking_thanks": (
+            "You're welcome. Please use the booking link above whenever you're ready."
+        ),
+        "post_booking_exit": (
+            "No problem. You can use the booking link above whenever you're ready, "
+            "or message us again anytime."
+        ),
+        "post_booking_resend_request": (
+            "The booking link is already shared above. Please use that link whenever "
+            "you're ready."
         ),
         "generic_retry": "Could you please provide a little more detail?",
         "generic_error": "Sorry, I could not process that. Please try again.",
     },
     "ar": {
         "project_type": "ما نوع الموقع الإلكتروني الذي تحتاجه؟",
+        "project_type_variant_1": (
+            "لنبدأ بسؤال سريع: هل تبحث عن موقع جديد أم ترقية أم كليهما؟"
+        ),
+        "project_type_variant_2": (
+            "يرجى اختيار أحد الخيارات: موقع جديد، ترقية موقع حالي، أو كليهما."
+        ),
+        "project_type_variant_3": (
+            "أولًا، هل تبحث عن موقع جديد أم ترقية لموقعك الحالي أم كليهما؟"
+        ),
         "requirements": "ما الذي تبحث عنه تحديدًا؟",
         "referral_source": "شكرًا لك. كيف سمعت عنا؟",
         "whatsapp_confirmed": "شكرًا لك. هل رقم واتساب هذا هو أفضل رقم للتواصل معك؟",
@@ -194,16 +270,30 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         ),
         "faq_location": "نعمل عن بُعد ويمكننا دعم العملاء عبر الإنترنت.",
         "faq_pricing": (
-            "تعتمد الأسعار على نطاق المشروع والميزات والجدول الزمني. "
-            "سيرشدك الفريق بشكل مناسب في الاجتماع."
+            "يمكن لأخصائي المواقع إرشادك بشكل مناسب في الاجتماع."
+        ),
+        "faq_timeline": (
+            "يعتمد الجدول الزمني على نطاق المشروع. يمكن لأخصائي المواقع إرشادك بشكل "
+            "مناسب في الاجتماع."
         ),
         "faq_unsupported": (
-            "سؤال جيد. لا أريد إعطاءك معلومات خاطئة هنا، "
-            "لكن فريقنا سيرشدك بشكل مناسب في الاجتماع."
+            "سؤال جيد. يمكن لأخصائي المواقع إرشادك بشكل مناسب في الاجتماع."
+        ),
+        "small_talk_greeting": "مرحبًا!",
+        "small_talk_wellbeing": "أنا بخير، شكرًا لسؤالك.",
+        "small_talk_greeting_wellbeing": "مرحبًا، أنا بخير، شكرًا لسؤالك.",
+        "small_talk_identity": "أنا نورة من Good Websites.",
+        "small_talk_about": (
+            "أنا نورة من Good Websites. أساعد في استفسارات المواقع وربط العملاء بالمختص المناسب."
+        ),
+        "small_talk_role": (
+            "أساعد Good Websites على فهم احتياجات موقعك الإلكتروني وربطك بالمختص المناسب."
+        ),
+        "small_talk_role_alt": (
+            "أساعد العملاء على مشاركة متطلبات مواقعهم والتواصل مع فريق Good Websites."
         ),
         "llm_parse_fallback": (
-            "شكرًا لك، لقد سجّلت ذلك. سيرشدك فريقنا بشكل مناسب في الاجتماع. "
-            "هل يمكنني طرح سؤال سريع آخر؟"
+            "هل يمكنك تزويدنا بمزيد من التفاصيل؟"
         ),
         "requirement_acknowledged": "شكرًا لك، لقد سجّلت ذلك.",
         "irrelevant_redirect": (
@@ -242,34 +332,47 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "4. التحدث مع موظف"
         ),
         "restart_intro": (
-            "أكيد، خلينا نبدأ من جديد. هل تبحث عن موقع جديد أم ترقية موقعك الحالي؟"
+            "أكيد، خلينا نبدأ من جديد. هل تبحث عن موقع جديد أم ترقية موقعك الحالي "
+            "أم كليهما؟"
         ),
         "onboarding_intro": (
-            "*مرحبًا بك!* 👋\n"
+            "مرحبًا، معك نورة من Good Websites!\n"
             "\n"
-            "سأطرح بعض الأسئلة السريعة حتى يفهم فريقنا مشروعك ويرسل لك "
-            "رابط الحجز المناسب.\n"
+            "لنبدأ، سأطرح بعض الأسئلة السريعة حتى يفهم فريقنا مشروعك ويرشدك نحو حجز اجتماع.\n"
             "\n"
-            "*طريقة استخدام هذه المحادثة:*\n"
-            "• أرسل *M* لفتح القائمة\n"
-            "• لتغيير اللغة، أرسل *M* ثم اختر *تغيير اللغة*\n"
-            "• يمكنك الرد بـ *النص* أو *الملاحظة الصوتية*"
+            "طريقة استخدام هذه المحادثة:\n"
+            "• أرسل M لفتح القائمة\n"
+            "• لتغيير اللغة، أرسل M ثم اختر تغيير اللغة\n"
+            "• يمكنك الرد بالنص أو بالملاحظة الصوتية"
         ),
         "onboarding_intro_voice": (
-            "مرحبًا بك. أرسلت تعليمات المحادثة في رسالة نصية. لنتابع."
+            "مرحبًا، معك نورة من Good Websites. أرسلت تعليمات المحادثة في رسالة نصية. "
+            "لنتابع."
         ),
-        "onboarding_welcome_back": (
-            "*مرحبًا بعودتك!* 👋\n"
-            "\n"
-            "سأتابع من حيث توقفنا.\n"
-            "\n"
-            "*تذكير سريع:*\n"
-            "• أرسل *M* لفتح القائمة\n"
-            "• لتغيير اللغة، أرسل *M* ثم اختر *تغيير اللغة*\n"
-            "• يمكنك الرد بـ *النص* أو *الملاحظة الصوتية*"
+        "onboarding_welcome_back": "مرحبًا بعودتك! لنكمل.",
+        "onboarding_welcome_back_voice": "مرحبًا بعودتك. لنكمل.",
+        "after_project_type_captured": "رائع، شكرًا.",
+        "after_requirements_captured": "شكرًا لك.",
+        "after_referral_source_captured": "شكرًا.",
+        "post_booking_default": "يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا.",
+        "post_booking_greeting": (
+            "مرحبًا. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
         ),
-        "onboarding_welcome_back_voice": (
-            "مرحبًا بعودتك. أرسلت التذكيرات السريعة في رسالة نصية. لنكمل."
+        "post_booking_wellbeing": (
+            "أنا بخير، شكرًا لسؤالك. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+        ),
+        "post_booking_greeting_wellbeing": (
+            "أنا بخير، شكرًا لسؤالك. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+        ),
+        "post_booking_thanks": (
+            "على الرحب والسعة. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+        ),
+        "post_booking_exit": (
+            "لا مشكلة. يمكنك استخدام رابط الحجز أعلاه متى ما كنت مستعدًا، "
+            "أو مراسلتنا مرة أخرى في أي وقت."
+        ),
+        "post_booking_resend_request": (
+            "رابط الحجز موجود أعلاه بالفعل. يرجى استخدامه متى ما كنت مستعدًا."
         ),
         "generic_retry": "هل يمكنك تزويدنا بمزيد من التفاصيل؟",
         "generic_error": "عذرًا، لم أتمكن من معالجة رسالتك. يرجى المحاولة مرة أخرى.",

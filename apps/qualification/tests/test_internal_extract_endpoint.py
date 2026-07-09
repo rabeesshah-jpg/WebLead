@@ -133,8 +133,10 @@ def test_valid_request_returns_filtered_result_and_calls_client(mock_extract, cl
     assert body["human_handoff_requested"] is False
     assert body["next_field"] == "referral_source"
     assert body["reply_text"].endswith("Thank you. How did you hear about us?")
-    assert "*Hi, welcome!*" in body["reply_text"]
-    assert "Send *M* to open the menu" in body["reply_text"]
+    assert "*Hi, this is Noura from Good Websites!*" in body["reply_text"] or (
+        "Hi, this is Noura from Good Websites!" in body["reply_text"]
+    )
+    assert "Send M to open the menu" in body["reply_text"]
     assert body["qualification_status"] == "in_progress"
     assert body["reply_mode"] == "text"
     assert body["send_booking_link"] is False

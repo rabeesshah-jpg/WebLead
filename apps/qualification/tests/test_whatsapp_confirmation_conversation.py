@@ -122,7 +122,7 @@ def test_unsupported_question_during_whatsapp_confirmation_defers_and_reasks(moc
     body = response.json()
     assert response.status_code == 200
     assert body["next_field"] == "whatsapp_confirmed"
-    assert "team will guide you properly in the meeting" in body["reply_text"]
+    assert "website specialist" in body["reply_text"]
     assert "Also, is this WhatsApp number the best number to reach you?" in body["reply_text"]
     assert "Please reply Yes or No" in body["reply_text"]
     mock_extract.assert_not_called()

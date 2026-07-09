@@ -353,6 +353,8 @@ class ExtractResponseSerializer(serializers.Serializer):
     next_required_field = serializers.CharField(required=False, allow_null=True)
     duplicate_or_locked = serializers.BooleanField(required=False)
     lock_timeout = serializers.BooleanField(required=False)
+    idle_reset_triggered = serializers.BooleanField(required=False)
+    conversation_state = serializers.CharField(required=False, allow_null=True)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -374,6 +376,8 @@ class ExtractResponseSerializer(serializers.Serializer):
             "next_required_field",
             "duplicate_or_locked",
             "lock_timeout",
+            "idle_reset_triggered",
+            "conversation_state",
         ):
             if optional_key not in instance:
                 data.pop(optional_key, None)

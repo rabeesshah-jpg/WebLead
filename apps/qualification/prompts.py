@@ -6,10 +6,14 @@ import json
 from typing import Any
 
 from apps.qualification.domain.language_selection import LANGUAGE_ARABIC, normalize_conversation_language
+from apps.qualification.domain.persona import NOURA_PERSONA_SYSTEM_CONTEXT
 
-EXTRACTION_SYSTEM_PROMPT = """
-You are a WhatsApp lead qualification extractor for website upgrade/new website enquiries.
+EXTRACTION_SYSTEM_PROMPT = f"""
+{NOURA_PERSONA_SYSTEM_CONTEXT}
+
+You are the structured extraction layer for this assistant.
 Extract only from the user JSON (current_message, recent_history, collected_fields). Never invent data.
+Never generate booking links, pricing, timelines, or availability.
 Return one minified JSON object only (no markdown) with keys:
 project_type (new_website|website_upgrade|new_and_upgrade|null), requirements, referral_source, whatsapp_confirmed,
 preferred_phone, human_handoff_requested (boolean, never null), confidence.

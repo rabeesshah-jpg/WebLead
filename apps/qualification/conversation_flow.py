@@ -6,19 +6,24 @@ from typing import Any, Literal
 
 from apps.qualification.conversation_state import get_accepted_fields, save_accepted_fields
 from apps.qualification.domain.language_selection import LANGUAGE_ENGLISH, normalize_conversation_language
-from apps.qualification.domain.messages import (
-    QUESTIONS,
-    get_customer_message,
-    get_qualification_question,
-)
+from apps.qualification.domain.messages import get_customer_message
+from apps.qualification.domain.qualification_questions import get_qualification_question_text
 from apps.qualification.domain.confirmation_reply import (
     classify_whatsapp_confirmation_reply,
     normalize_confirmation_message,
 )
-from apps.qualification.domain.inbound_message_classification import classify_inbound_message
+from apps.qualification.domain.help_commands import is_help_request
+from apps.qualification.domain.inbound_message_classification import (
+    InboundMessageClassification,
+    classify_inbound_message,
+    infer_project_type_from_answer,
+    is_direct_project_type_answer,
+)
 from apps.qualification.domain.inbound_message_responses import (
+    build_reply_after_field_capture,
     build_rich_inbound_response_metadata,
     build_rich_qualification_reply,
+    build_small_talk_reply,
     build_whatsapp_confirmation_rich_reply,
 )
 from apps.qualification.domain.qualification_field_enrichment import (
@@ -49,12 +54,60 @@ REJECTED_FIELD_REASON_CODES = {
     "confidence below threshold": "low_confidence",
 }
 
+_CAPTURE_TRANSITION_FIELDS = frozenset(
+    {"project_type", "requirements", "referral_source"},
+)
+
+
+def qualification_has_started(fields: dict[str, Any]) -> bool:
+    """Return True once any qualification field has been captured."""
+    return any(
+        (
+            _has_project_type(fields),
+            _has_requirements(fields),
+            _has_referral_source(fields),
+            _is_whatsapp_confirmed_resolved(fields),
+            _has_preferred_phone(fields),
+        )
+    )
+
+
+def _newly_captured_qualification_field(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> str | None:
+    """Return the last qualification field newly captured between two snapshots."""
+    captured: str | None = None
+    checks: tuple[tuple[str, Any], ...] = (
+        ("project_type", _has_project_type),
+        ("requirements", _has_requirements),
+        ("referral_source", _has_referral_source),
+        ("whatsapp_confirmed", _is_whatsapp_confirmed_resolved),
+        ("preferred_phone", _has_preferred_phone),
+    )
+    for field_name, checker in checks:
+        if checker(after) and not checker(before):
+            captured = field_name
+    return captured
+
+
+def _should_skip_onboarding_for_turn(
+    *,
+    persisted_fields: dict[str, Any],
+    merged_fields: dict[str, Any],
+    captured_field: str | None,
+) -> bool:
+    """Skip first-contact onboarding once qualification is active or a field was captured."""
+    return qualification_has_started(persisted_fields) or captured_field is not None
+
 
 def _reply_text_for_next_field(
     *,
     language: str,
     next_field: str | None,
     rejected_fields: dict[str, str],
+    whatsapp_number: str,
+    repeat: bool = False,
 ) -> str:
     if not next_field:
         return ""
@@ -63,7 +116,12 @@ def _reply_text_for_next_field(
         return get_customer_message(language=language, key="invalid_phone")
     if reason == "low_confidence":
         return get_customer_message(language=language, key="generic_retry")
-    return get_qualification_question(language=language, field=next_field)
+    return get_qualification_question_text(
+        language=language,
+        field=next_field,
+        repeat=repeat or bool(reason),
+        whatsapp_number=whatsapp_number,
+    )
 
 
 def _with_conversation_language(
@@ -102,6 +160,119 @@ def _apply_field_updates(
     return result
 
 
+def try_handle_help_request_turn(
+    *,
+    whatsapp_number: str,
+    message: str,
+    language: str = LANGUAGE_ENGLISH,
+) -> dict[str, Any] | None:
+    """Return full onboarding/help instructions when the customer asks for help."""
+    if not is_help_request(message):
+        return None
+
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    normalized_language = normalize_conversation_language(language)
+    intro = get_customer_message(language=normalized_language, key="onboarding_intro")
+    next_field = get_active_next_field(persisted_fields)
+    if next_field:
+        question = get_qualification_question_text(
+            language=normalized_language,
+            field=next_field,
+            repeat=True,
+            whatsapp_number=whatsapp_number,
+        )
+        reply_text = f"{intro}\n\n{question}".strip()
+    else:
+        reply_text = intro
+
+    status: QualificationStatus = (
+        "completed" if is_qualification_complete(persisted_fields) else "in_progress"
+    )
+
+    return _with_conversation_language(
+        {
+            "accepted_fields": dict(persisted_fields),
+            "rejected_fields": {},
+            "human_handoff_requested": False,
+            "next_field": next_field,
+            "reply_text": reply_text,
+            "qualification_status": status,
+            "preferred_phone": persisted_fields.get("preferred_phone"),
+            "skip_onboarding_intro": True,
+            "classification": ["help_request"],
+        },
+        language=normalized_language,
+    )
+
+
+def try_handle_small_talk_qualification_turn(
+    *,
+    whatsapp_number: str,
+    message: str,
+    language: str = LANGUAGE_ENGLISH,
+) -> dict[str, Any] | None:
+    """
+    Handle greetings, wellbeing, and identity questions without changing state.
+
+    Runs before rich inbound handling so small talk does not break qualification flow.
+    """
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    next_field = get_active_next_field(persisted_fields)
+    if not next_field:
+        return None
+
+    classification = classify_inbound_message(message)
+    if not classification.is_small_talk_or_identity and not classification.role_question:
+        return None
+
+    if next_field == "whatsapp_confirmed" and (
+        classification.yes_confirmation or classification.no_confirmation
+    ):
+        return None
+
+    normalized_language = normalize_conversation_language(language)
+    reply_text = build_small_talk_reply(
+        classification,
+        language=normalized_language,
+        next_field=next_field,
+        whatsapp_number=whatsapp_number,
+    )
+    return _with_conversation_language(
+        {
+            "accepted_fields": dict(persisted_fields),
+            "rejected_fields": {},
+            "human_handoff_requested": False,
+            "next_field": next_field,
+            "reply_text": reply_text,
+            "qualification_status": "in_progress",
+            "preferred_phone": persisted_fields.get("preferred_phone"),
+            "skip_onboarding_intro": True,
+            **build_rich_inbound_response_metadata(
+                classification,
+                {},
+                next_field=next_field,
+                complete=False,
+            ),
+        },
+        language=normalized_language,
+    )
+
+
+def _rich_inbound_skip_onboarding(
+    classification: InboundMessageClassification,
+    *,
+    saved_enrichment: bool,
+) -> bool:
+    """Skip first-contact onboarding only for FAQ-style rich inbound turns."""
+    if classification.has_answerable_question:
+        return True
+    if classification.unsupported_or_unclear_question:
+        return True
+    if classification.irrelevant_or_unclear and not saved_enrichment:
+        return True
+    return False
+
+
 def try_handle_rich_inbound_qualification_turn(
     *,
     whatsapp_number: str,
@@ -119,8 +290,50 @@ def try_handle_rich_inbound_qualification_turn(
         return None
 
     classification = classify_inbound_message(message)
+    if classification.is_small_talk_or_identity or classification.role_question:
+        return None
     if classification.yes_confirmation or classification.no_confirmation:
         return None
+
+    normalized_language = normalize_conversation_language(language)
+
+    if active_field == "project_type" and not persisted_fields.get("project_type"):
+        project_type_answer = infer_project_type_from_answer(message)
+        if project_type_answer and is_direct_project_type_answer(message):
+            merged_fields = dict(persisted_fields)
+            merged_fields["project_type"] = project_type_answer
+            save_accepted_fields(whatsapp_number, merged_fields)
+            next_field = _next_missing_field(merged_fields)
+            if next_field:
+                reply_text = build_reply_after_field_capture(
+                    captured_field="project_type",
+                    next_field=next_field,
+                    language=normalized_language,
+                    whatsapp_number=whatsapp_number,
+                )
+            else:
+                reply_text = _completed_reply_text(language=normalized_language)
+            return _with_conversation_language(
+                {
+                    "accepted_fields": merged_fields,
+                    "rejected_fields": {},
+                    "human_handoff_requested": False,
+                    "next_field": next_field,
+                    "reply_text": reply_text,
+                    "qualification_status": (
+                        "completed" if next_field is None else "in_progress"
+                    ),
+                    "preferred_phone": merged_fields.get("preferred_phone"),
+                    "skip_onboarding_intro": True,
+                    **build_rich_inbound_response_metadata(
+                        classification,
+                        {"project_type": project_type_answer},
+                        next_field=next_field,
+                        complete=next_field is None,
+                    ),
+                },
+                language=normalized_language,
+            )
 
     updates = apply_classification_to_fields(persisted_fields, classification)
     saved_enrichment = bool(updates)
@@ -139,9 +352,11 @@ def try_handle_rich_inbound_qualification_turn(
         next_field = _next_missing_field(merged_fields)
         reply_text = build_rich_qualification_reply(
             classification,
-            language=normalize_conversation_language(language),
+            language=normalized_language,
             saved_enrichment=False,
             next_field=next_field,
+            whatsapp_number=whatsapp_number,
+            qualification_in_progress=qualification_has_started(merged_fields),
         )
         return _with_conversation_language(
             {
@@ -151,21 +366,25 @@ def try_handle_rich_inbound_qualification_turn(
                 "next_field": next_field,
                 "reply_text": reply_text,
                 "qualification_status": "in_progress",
-                "preferred_phone": merged_fields.get("preferred_phone"),
-                **build_rich_inbound_response_metadata(
-                    classification,
-                    {},
-                    next_field=next_field,
-                    complete=False,
-                ),
-            },
-            language=normalize_conversation_language(language),
-        )
+            "preferred_phone": merged_fields.get("preferred_phone"),
+            "skip_onboarding_intro": _rich_inbound_skip_onboarding(
+                classification,
+                saved_enrichment=False,
+            ),
+            **build_rich_inbound_response_metadata(
+                classification,
+                {},
+                next_field=next_field,
+                complete=False,
+            ),
+        },
+        language=normalize_conversation_language(language),
+    )
 
     merged_fields = _apply_field_updates(persisted_fields, updates)
     save_accepted_fields(whatsapp_number, merged_fields)
-    normalized_language = normalize_conversation_language(language)
     next_field = _next_missing_field(merged_fields)
+    captured_field = _newly_captured_qualification_field(persisted_fields, merged_fields)
 
     if _is_qualification_complete(merged_fields):
         return _with_conversation_language(
@@ -187,12 +406,27 @@ def try_handle_rich_inbound_qualification_turn(
             language=normalized_language,
         )
 
-    reply_text = build_rich_qualification_reply(
-        classification,
-        language=normalized_language,
-        saved_enrichment=saved_enrichment,
-        next_field=next_field,
-    )
+    if (
+        captured_field in _CAPTURE_TRANSITION_FIELDS
+        and next_field
+        and not classification.has_answerable_question
+        and not classification.unsupported_or_unclear_question
+    ):
+        reply_text = build_reply_after_field_capture(
+            captured_field=captured_field,
+            next_field=next_field,
+            language=normalized_language,
+            whatsapp_number=whatsapp_number,
+        )
+    else:
+        reply_text = build_rich_qualification_reply(
+            classification,
+            language=normalized_language,
+            saved_enrichment=saved_enrichment,
+            next_field=next_field,
+            whatsapp_number=whatsapp_number,
+            qualification_in_progress=qualification_has_started(merged_fields),
+        )
     return _with_conversation_language(
         {
             "accepted_fields": merged_fields,
@@ -202,6 +436,17 @@ def try_handle_rich_inbound_qualification_turn(
             "reply_text": reply_text,
             "qualification_status": "in_progress",
             "preferred_phone": merged_fields.get("preferred_phone"),
+            "skip_onboarding_intro": (
+                _should_skip_onboarding_for_turn(
+                    persisted_fields=persisted_fields,
+                    merged_fields=merged_fields,
+                    captured_field=captured_field,
+                )
+                or _rich_inbound_skip_onboarding(
+                    classification,
+                    saved_enrichment=saved_enrichment,
+                )
+            ),
             **build_rich_inbound_response_metadata(
                 classification,
                 updates,
@@ -541,19 +786,39 @@ def build_turn_response(
         )
 
     next_field = _next_missing_field(merged_fields)
+    captured_field = _newly_captured_qualification_field(persisted_fields, merged_fields)
+    if (
+        captured_field in _CAPTURE_TRANSITION_FIELDS
+        and next_field
+        and captured_field not in rejected_fields
+    ):
+        reply_text = build_reply_after_field_capture(
+            captured_field=captured_field,
+            next_field=next_field,
+            language=normalized_language,
+            whatsapp_number=whatsapp_number,
+        )
+    else:
+        reply_text = _reply_text_for_next_field(
+            language=normalized_language,
+            next_field=next_field,
+            rejected_fields=rejected_fields,
+            whatsapp_number=whatsapp_number,
+        )
     return _with_conversation_language(
         {
             "accepted_fields": merged_fields,
             "rejected_fields": rejected_fields,
             "human_handoff_requested": False,
             "next_field": next_field,
-            "reply_text": _reply_text_for_next_field(
-                language=normalized_language,
-                next_field=next_field,
-                rejected_fields=rejected_fields,
-            ),
+            "reply_text": reply_text,
             "qualification_status": "in_progress",
             "preferred_phone": merged_fields.get("preferred_phone"),
+            "skip_onboarding_intro": _should_skip_onboarding_for_turn(
+                persisted_fields=persisted_fields,
+                merged_fields=merged_fields,
+                captured_field=captured_field,
+            ),
         },
         language=normalized_language,
     )

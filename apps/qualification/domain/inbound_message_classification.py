@@ -25,9 +25,27 @@ SERVICE_PATTERNS: tuple[tuple[str, str], ...] = (
 
 QUESTION_SERVICES_PATTERNS: tuple[str, ...] = (
     r"what services do you provide",
-    r"what do you (?:do|offer|provide)",
+    r"what do you offer",
+    r"what do you provide",
     r"which services",
-    r"what can you help with",
+)
+
+ROLE_QUESTION_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"tell me (?:about )?your role", "role"),
+    (r"tell me your role", "role"),
+    (r"what(?:'s| is) your (?:job|role)\??", "role"),
+    (r"what your (?:job|role)\??", "role"),
+    (r"what do you do\??", "what_do_you_do"),
+    (r"how can you help me\??", "role"),
+    (r"what can you help me with\??", "role"),
+)
+
+ABOUT_YOURSELF_PATTERNS: tuple[str, ...] = (
+    r"tell me about your(?:self| self)",
+    r"introduce yourself",
+    r"(?:first |but )?tell me about you\b",
+    r"^about you\??$",
+    r"about yourself",
 )
 
 QUESTION_LOCATION_PATTERNS: tuple[str, ...] = (
@@ -42,6 +60,53 @@ QUESTION_PRICING_PATTERNS: tuple[str, ...] = (
     r"what(?:'s| is) the (?:price|pricing|cost)",
     r"how much (?:for|to)",
     r"what are your (?:prices|rates)",
+    r"what is the price",
+)
+
+QUESTION_TIMELINE_PATTERNS: tuple[str, ...] = (
+    r"what(?:'s| is) the timeline",
+    r"how long (?:will it|does it|would it) take",
+    r"when will (?:it|the website|my website) be (?:ready|done|finished|live)",
+    r"delivery time",
+    r"how soon can you",
+    r"turnaround time",
+)
+
+SMALL_TALK_GREETING_PATTERNS: tuple[str, ...] = (
+    r"^(?:hi|hello|hey|hiya|good morning|good afternoon|good evening)(?:[!.,]?\s*)?$",
+    r"^(?:hi|hello|hey)\s+there(?:[!.,]?\s*)?$",
+    r"^(?:marhaba|ahlan|salam|assalamu alaikum)(?:[!.,]?\s*)?$",
+)
+
+SMALL_TALK_GREETING_PREFIX_PATTERNS: tuple[str, ...] = (
+    r"^(?:hi|hello|hey|hiya|good morning|good afternoon|good evening)\b",
+    r"^(?:assalamu?\s*(?:o|wa)?\s*alaikum|as\s*salamu\s*alaikum|salam|marhaba|ahlan)\b",
+)
+
+SMALL_TALK_WELLBEING_PATTERNS: tuple[str, ...] = (
+    r"^how are you(?:\s+doing)?\??$",
+    r"^how(?:'s| is) it going\??$",
+    r"^how are things\??$",
+    r"^how do you do\??$",
+    r"^how r u\??$",
+    r"^how are u\??$",
+)
+
+SMALL_TALK_WELLBEING_ANYWHERE_PATTERNS: tuple[str, ...] = (
+    r"\bhow are you\b",
+    r"\bhow(?:'s| is) it going\b",
+    r"\bhow are things\b",
+    r"\bhow r u\b",
+    r"\bhow are u\b",
+    r"\bhow're u\b",
+)
+
+IDENTITY_QUESTION_PATTERNS: tuple[str, ...] = (
+    r"what(?:'s| is) your name\??",
+    r"who are you\??",
+    r"who is this\??",
+    r"may i know your name\??",
+    r"what should i call you\??",
 )
 
 UNSUPPORTED_QUESTION_PATTERNS: tuple[str, ...] = (
@@ -84,6 +149,13 @@ class InboundMessageClassification:
     user_question_services: bool = False
     user_question_location: bool = False
     user_question_pricing: bool = False
+    user_question_timeline: bool = False
+    small_talk_greeting: bool = False
+    small_talk_wellbeing: bool = False
+    identity_question: bool = False
+    about_yourself_question: bool = False
+    role_question: bool = False
+    role_question_kind: str | None = None
     unsupported_or_unclear_question: bool = False
     phone_number: bool = False
     irrelevant_or_unclear: bool = False
@@ -96,8 +168,25 @@ class InboundMessageClassification:
                 self.user_question_services,
                 self.user_question_location,
                 self.user_question_pricing,
+                self.user_question_timeline,
             )
         )
+
+    @property
+    def is_small_talk_or_identity(self) -> bool:
+        return any(
+            (
+                self.small_talk_greeting,
+                self.small_talk_wellbeing,
+                self.identity_question,
+                self.about_yourself_question,
+                self.role_question,
+            )
+        )
+
+    @property
+    def is_persona_interaction(self) -> bool:
+        return self.is_small_talk_or_identity
 
     @property
     def has_user_question(self) -> bool:
@@ -117,6 +206,16 @@ def classification_labels(classification: InboundMessageClassification) -> list[
         labels.append("requirement_detail")
     if classification.has_answerable_question:
         labels.append("user_question")
+    if classification.small_talk_greeting:
+        labels.append("small_talk_greeting")
+    if classification.small_talk_wellbeing:
+        labels.append("small_talk_wellbeing")
+    if classification.identity_question:
+        labels.append("identity_question")
+    if classification.about_yourself_question:
+        labels.append("about_yourself_question")
+    if classification.role_question:
+        labels.append("role_question")
     if classification.unsupported_or_unclear_question:
         labels.append("unsupported_or_unclear_question")
     if classification.irrelevant_or_unclear:
@@ -140,6 +239,149 @@ def _extract_service_tokens(normalized: str) -> list[str]:
     return tokens
 
 
+def _match_role_question(normalized: str) -> tuple[bool, str | None]:
+    for pattern, kind in ROLE_QUESTION_PATTERNS:
+        if re.search(pattern, normalized):
+            return True, kind
+    return False, None
+
+
+def _has_substantive_qualification_content(
+    *,
+    service_request: bool,
+    requirement_detail: bool,
+    phone_number: bool,
+    user_question_services: bool,
+    user_question_location: bool,
+    user_question_pricing: bool,
+    user_question_timeline: bool,
+) -> bool:
+    """Return True when the message carries real qualification content."""
+    return any(
+        (
+            service_request,
+            requirement_detail,
+            phone_number,
+            user_question_services,
+            user_question_location,
+            user_question_pricing,
+            user_question_timeline,
+        )
+    )
+
+
+_FILLER_ACKNOWLEDGMENT_WORDS: frozenset[str] = frozenset(
+    {
+        "nice",
+        "good",
+        "ok",
+        "okay",
+        "thanks",
+        "thank",
+        "you",
+        "cool",
+        "great",
+        "sure",
+        "alright",
+        "fine",
+        "bro",
+        "brother",
+        "yea",
+        "yeah",
+        "yep",
+    }
+)
+
+
+def _is_filler_acknowledgment(normalized: str) -> bool:
+    """Return True when the message is only brief filler with no qualification content."""
+    words = normalized.split()
+    if not words or len(words) > 4:
+        return False
+    return all(word in _FILLER_ACKNOWLEDGMENT_WORDS for word in words)
+
+
+def infer_project_type_from_answer(message: str) -> str | None:
+    """Map a short customer answer to a supported project_type value."""
+    normalized = normalize_confirmation_message(message)
+    if not normalized:
+        return None
+    if normalized == "both":
+        return "new_and_upgrade"
+    wants_new = bool(
+        re.search(
+            r"\b(?:new website|brand new website|new site|new web site)\b",
+            normalized,
+        )
+    )
+    wants_upgrade = bool(
+        re.search(
+            r"\b(?:upgrade(?:\s+existing)?\s+website|existing website|website upgrade)\b",
+            normalized,
+        )
+    )
+    if wants_new and wants_upgrade:
+        return "new_and_upgrade"
+    if wants_upgrade and not wants_new:
+        return "website_upgrade"
+    if wants_new:
+        return "new_website"
+    if re.fullmatch(r"(?:new )?website", normalized):
+        return "new_website"
+    if normalized in {"upgrade", "website upgrade"}:
+        return "website_upgrade"
+    return None
+
+
+_DIRECT_PROJECT_TYPE_BLOCKERS: tuple[str, ...] = (
+    r"\bi need\b",
+    r"\bi want\b",
+    r"\bi'm looking for\b",
+    r"\bwe need\b",
+    r"\bwe want\b",
+    r"\bfor my\b",
+    r"\bfor our\b",
+    r"\bfor the\b",
+)
+
+
+def is_direct_project_type_answer(message: str) -> bool:
+    """Return True when the message only answers project_type, not full requirements."""
+    if not infer_project_type_from_answer(message):
+        return False
+    normalized = normalize_confirmation_message(message)
+    return not _matches_any(normalized, _DIRECT_PROJECT_TYPE_BLOCKERS)
+
+
+_ONBOARDING_GREETING_WORDS: frozenset[str] = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "hiya",
+        "there",
+        "good",
+        "morning",
+        "afternoon",
+        "evening",
+        "marhaba",
+        "ahlan",
+        "salam",
+        "assalamu",
+        "alaikum",
+    }
+)
+
+
+def _is_greeting_with_filler(normalized: str) -> bool:
+    """Return True for short greetings such as ``hello brother`` or ``hi there``."""
+    words = normalized.split()
+    if not words or len(words) > 4:
+        return False
+    allowed = _FILLER_ACKNOWLEDGMENT_WORDS | _ONBOARDING_GREETING_WORDS
+    return all(word in allowed for word in words) and words[0] in _ONBOARDING_GREETING_WORDS
+
+
 def classify_inbound_message(message: str) -> InboundMessageClassification:
     """Classify an inbound message into one or more conversation categories."""
     raw = " ".join(message.split()).strip()
@@ -161,11 +403,54 @@ def classify_inbound_message(message: str) -> InboundMessageClassification:
     user_question_services = _matches_any(normalized, QUESTION_SERVICES_PATTERNS)
     user_question_location = _matches_any(normalized, QUESTION_LOCATION_PATTERNS)
     user_question_pricing = _matches_any(normalized, QUESTION_PRICING_PATTERNS)
+    user_question_timeline = _matches_any(normalized, QUESTION_TIMELINE_PATTERNS)
+
+    has_qualification_content = _has_substantive_qualification_content(
+        service_request=service_request,
+        requirement_detail=requirement_detail,
+        phone_number=phone_number,
+        user_question_services=user_question_services,
+        user_question_location=user_question_location,
+        user_question_pricing=user_question_pricing,
+        user_question_timeline=user_question_timeline,
+    )
+
+    about_yourself_question = _matches_any(normalized, ABOUT_YOURSELF_PATTERNS)
+    identity_question = _matches_any(normalized, IDENTITY_QUESTION_PATTERNS)
+    role_question, role_question_kind = _match_role_question(normalized)
+
+    wellbeing_anywhere = _matches_any(normalized, SMALL_TALK_WELLBEING_ANYWHERE_PATTERNS)
+    small_talk_wellbeing = wellbeing_anywhere or (
+        not has_qualification_content
+        and _matches_any(normalized, SMALL_TALK_WELLBEING_PATTERNS)
+    )
+
+    greeting_prefix = (
+        not has_qualification_content
+        and _matches_any(normalized, SMALL_TALK_GREETING_PREFIX_PATTERNS)
+    )
+    small_talk_greeting = (
+        not has_qualification_content
+        and _matches_any(normalized, SMALL_TALK_GREETING_PATTERNS)
+    )
+    if greeting_prefix and wellbeing_anywhere:
+        small_talk_greeting = True
+        small_talk_wellbeing = True
+    elif greeting_prefix and _is_greeting_with_filler(normalized):
+        small_talk_greeting = True
+
     unsupported_or_unclear_question = _matches_any(normalized, UNSUPPORTED_QUESTION_PATTERNS)
 
     has_question_mark = "?" in raw
     has_other_question = has_question_mark and not (
-        user_question_services or user_question_location or user_question_pricing
+        user_question_services
+        or user_question_location
+        or user_question_pricing
+        or user_question_timeline
+        or small_talk_wellbeing
+        or identity_question
+        or about_yourself_question
+        or role_question
     )
     if has_other_question and not unsupported_or_unclear_question:
         unsupported_or_unclear_question = True
@@ -179,10 +464,22 @@ def classify_inbound_message(message: str) -> InboundMessageClassification:
         and not user_question_services
         and not user_question_location
         and not user_question_pricing
+        and not user_question_timeline
+        and not small_talk_greeting
+        and not small_talk_wellbeing
+        and not identity_question
+        and not about_yourself_question
+        and not role_question
         and not unsupported_or_unclear_question
-        and confirmation == "unclear"
-        and len(normalized.split()) <= 2
-        and normalized in {"maybe", "idk", "hmm", "hm", "huh", "dunno", "not sure", "what"}
+        and (
+            _is_filler_acknowledgment(normalized)
+            or (
+                confirmation == "unclear"
+                and len(normalized.split()) <= 2
+                and normalized
+                in {"maybe", "idk", "hmm", "hm", "huh", "dunno", "not sure", "what"}
+            )
+        )
     )
 
     return InboundMessageClassification(
@@ -194,6 +491,13 @@ def classify_inbound_message(message: str) -> InboundMessageClassification:
         user_question_services=user_question_services,
         user_question_location=user_question_location,
         user_question_pricing=user_question_pricing,
+        user_question_timeline=user_question_timeline,
+        small_talk_greeting=small_talk_greeting,
+        small_talk_wellbeing=small_talk_wellbeing,
+        identity_question=identity_question,
+        about_yourself_question=about_yourself_question,
+        role_question=role_question,
+        role_question_kind=role_question_kind,
         unsupported_or_unclear_question=unsupported_or_unclear_question,
         phone_number=phone_number,
         irrelevant_or_unclear=irrelevant_or_unclear,

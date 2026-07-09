@@ -411,6 +411,8 @@ def _build_success_response(
         turn_response,
         input_channel=turn_request.input_channel,
         transcript=transcript,
+        whatsapp_number=turn_request.whatsapp_number,
+        user_message=turn_request.message,
     )
 
 

@@ -32,11 +32,12 @@ def reset_qualification_progress_after_inactivity(
     """
     Clear stale qualification progress after a long idle gap.
 
-    Preserves the WhatsApp session row, selected language, and onboarding flags
-    so the same turn can still deliver the welcome-back intro. Does not clear
-    MessageSid idempotency entries for the current or prior inbound messages.
+    Preserves the WhatsApp session row and selected language. Resets onboarding
+    so the next inbound message can deliver the first-contact intro again. Does
+    not clear MessageSid idempotency entries for the current or prior messages.
     """
     _clear_qualification_progress(whatsapp_number=whatsapp_number, session=session)
+    reset_onboarding_intro_sent(session)
     session.refresh_from_db()
 
 

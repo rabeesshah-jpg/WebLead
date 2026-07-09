@@ -224,7 +224,7 @@ def test_booking_link_sent_after_server_restart_clears_stale_session_flag(
     mock_twilio_booking_link_send.assert_not_called()
     mock_extract.assert_not_called()
     session = WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER)
-    assert session.booking_link_sent_at is None
+    assert session.booking_link_sent_at is not None
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)

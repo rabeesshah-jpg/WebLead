@@ -352,6 +352,8 @@ class WhatsAppMenuService:
             input_channel=validated_data["input_channel"],
             transcript=transcript,
             conversation_language=language,
+            whatsapp_number=validated_data.get("whatsapp_number"),
+            user_message=validated_data.get("message") or "",
         )
 
     def _dispatch_whatsapp_menu(

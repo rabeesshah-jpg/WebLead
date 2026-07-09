@@ -94,7 +94,8 @@ def test_services_question_answers_and_continues_current_question(mock_extract, 
     assert response.status_code == 200
     assert "website design" in body["reply_text"]
     assert "SEO" in body["reply_text"]
-    assert "new website or an upgrade" in body["reply_text"]
+    assert "new website" in body["reply_text"]
+    assert "upgrade" in body["reply_text"]
     assert body["next_field"] == "project_type"
     assert body["classification"] == ["user_question"]
     mock_extract.assert_not_called()
@@ -108,7 +109,8 @@ def test_location_question_answers_and_continues_current_question(mock_extract, 
     body = response.json()
     assert response.status_code == 200
     assert "work remotely" in body["reply_text"]
-    assert "new website or an upgrade" in body["reply_text"]
+    assert "new website" in body["reply_text"]
+    assert "upgrade" in body["reply_text"]
     assert body["next_field"] == "project_type"
     assert "user_question" in body["classification"]
     mock_extract.assert_not_called()
@@ -129,8 +131,8 @@ def test_unsupported_question_defers_to_meeting_and_continues(mock_extract, clie
 
     body = response.json()
     assert response.status_code == 200
-    assert "team will guide you properly in the meeting" in body["reply_text"]
-    assert "How did you hear about us?" in body["reply_text"]
+    assert "website specialist" in body["reply_text"]
+    assert "How did you hear about Good Websites?" in body["reply_text"]
     assert body["next_field"] == "referral_source"
     assert "unsupported_or_unclear_question" in body["classification"]
     mock_extract.assert_not_called()
@@ -187,7 +189,7 @@ def test_combined_requirement_and_location_question(mock_extract, client):
     assert body["accepted_fields"]["services_required"] == ["website", "automation"]
     assert "work remotely" in body["reply_text"]
     assert "I've noted that" in body["reply_text"]
-    assert "How did you hear about us?" in body["reply_text"]
+    assert "How did you hear about Good Websites?" in body["reply_text"]
     assert "service_request" in body["classification"]
     assert "user_question" in body["classification"]
     mock_extract.assert_not_called()
@@ -256,7 +258,7 @@ def test_voice_unsupported_question_has_spoken_fallback_without_url(mock_extract
 
     body = response.json()
     assert response.status_code == 200
-    assert "team will guide you properly in the meeting" in body["spoken_text"]
+    assert "website specialist" in body["spoken_text"]
     assert spoken_text_contains_url(body["spoken_text"]) is False
     assert body["next_field"] == "referral_source"
     mock_extract.assert_not_called()

@@ -81,7 +81,7 @@ def test_first_message_with_website_requirement_asks_for_referral_source(mock_ex
     assert body["accepted_fields"]["requirements"] == "I need a new website for my restaurant."
     assert body["accepted_fields"]["services_required"] == ["new_website"]
     assert body["next_field"] == "referral_source"
-    assert "How did you hear about us?" in body["reply_text"]
+    assert "How did you hear about Good Websites?" in body["reply_text"]
     assert body["qualification_status"] == "in_progress"
     mock_extract.assert_not_called()
 
@@ -105,7 +105,9 @@ def test_referral_source_response_asks_for_whatsapp_confirmation(mock_extract, c
     body = second.json()
     assert body["accepted_fields"]["referral_source"] == "Facebook"
     assert body["next_field"] == "whatsapp_confirmed"
-    assert body["reply_text"] == "Thank you. Is this WhatsApp number the best number to reach you?"
+    assert body["reply_text"] == (
+        "Thanks. Is this the best contact number for our team to reach you?"
+    )
     assert body["qualification_status"] == "in_progress"
     mock_extract.assert_called_once_with(
         customer_message="Facebook",
@@ -152,6 +154,8 @@ def test_customer_confirms_whatsapp_number_completes_qualification(mock_extract,
     assert body["send_booking_link"] is False
     assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
+    assert BOOKING_LINK in body["reply_text"]
+    assert body.get("conversation_state") == "BOOKING_LINK_SENT"
     mock_extract.assert_not_called()
 
 
@@ -267,10 +271,12 @@ def test_completed_state_retry_remains_completed_without_openrouter(mock_extract
     body = response.json()
     assert body["qualification_status"] == "completed"
     assert body["next_field"] is None
-    assert body["reply_text"] == COMPLETION_REPLY_TEXT
+    assert BOOKING_LINK not in body["reply_text"]
+    assert "booking link above" in body["reply_text"]
     assert body["send_booking_link"] is False
     assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
+    assert body.get("conversation_state") == "BOOKING_LINK_SENT"
     mock_extract.assert_not_called()
 
 

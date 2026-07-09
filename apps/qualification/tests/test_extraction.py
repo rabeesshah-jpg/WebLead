@@ -17,11 +17,14 @@ from apps.qualification.schema import (
 
 def test_system_prompt_contains_core_rules():
     assert "Never invent data" in EXTRACTION_SYSTEM_PROMPT
+    assert "Noura" in EXTRACTION_SYSTEM_PROMPT
+    assert "Good Websites" in EXTRACTION_SYSTEM_PROMPT
     assert "new_website" in EXTRACTION_SYSTEM_PROMPT
     assert "website_upgrade" in EXTRACTION_SYSTEM_PROMPT
     assert "human_handoff_requested" in EXTRACTION_SYSTEM_PROMPT
     assert "phone_confirmation_question_asked=true" in EXTRACTION_SYSTEM_PROMPT
     assert "minified JSON" in EXTRACTION_SYSTEM_PROMPT
+    assert "Never generate booking links" in EXTRACTION_SYSTEM_PROMPT
 
 
 def test_user_message_includes_phone_confirmation_context():

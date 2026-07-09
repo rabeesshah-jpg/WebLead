@@ -95,6 +95,32 @@ def build_qualification_step_response(
     next_field = get_active_next_field(persisted_fields)
 
     if is_qualification_complete(persisted_fields):
+        from apps.qualification.domain.post_booking_link_response import (
+            build_post_booking_link_reply,
+        )
+        from apps.qualification.services.booking_link_delivery_service import (
+            booking_link_already_sent,
+        )
+        from apps.qualification.services.conversation_session_service import (
+            get_or_create_conversation_session,
+        )
+
+        session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
+        if booking_link_already_sent(session=session):
+            reply_text = build_post_booking_link_reply(message="", language=normalized_language)
+            return {
+                "accepted_fields": persisted_fields,
+                "rejected_fields": {},
+                "human_handoff_requested": False,
+                "next_field": None,
+                "reply_text": reply_text,
+                "qualification_status": "completed",
+                "preferred_phone": persisted_fields.get("preferred_phone"),
+                "conversation_language": normalized_language,
+                "booking_link_sent": True,
+                "conversation_state": "BOOKING_LINK_SENT",
+            }
+
         from apps.qualification.domain.booking_completion import (
             build_booking_completion_reply,
         )
@@ -427,6 +453,8 @@ class LanguageGateService:
             input_channel=validated_data["input_channel"],
             transcript=None,
             conversation_language=language,
+            whatsapp_number=whatsapp_number,
+            user_message=validated_data.get("message") or "",
         )
         if language_command_action is not None:
             finalized["language_command_action"] = language_command_action
@@ -457,6 +485,8 @@ class LanguageGateService:
             input_channel=validated_data["input_channel"],
             transcript=None,
             conversation_language=language,
+            whatsapp_number=whatsapp_number,
+            user_message=validated_data.get("message") or "",
         )
         if user_message:
             append_conversation_turn(
