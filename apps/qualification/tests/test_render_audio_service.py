@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import override_settings
 
+from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.render_audio_idempotency import clear_render_audio_cache
 from apps.qualification.services.render_audio_service import RenderAudioService
 from apps.qualification.whatsapp_audio import (
@@ -54,9 +55,27 @@ def test_render_calls_renderer_with_configured_english_voice_and_returns_contrac
 
 
 @override_settings(MAX_TTS_TEXT_LENGTH=800)
-def test_blank_text_raises_invalid_request_error():
-    with pytest.raises(InvalidRenderAudioRequestError):
-        RenderAudioService(renderer=MagicMock()).render({**VALIDATED_DATA, "text": "   "})
+def test_blank_text_returns_skipped_empty_without_renderer():
+    renderer = MagicMock()
+    result = RenderAudioService(renderer=renderer).render({**VALIDATED_DATA, "text": "   "})
+    assert result["status"] == "skipped_empty"
+    assert result["media_url"] is None
+    renderer.assert_not_called()
+
+
+@override_settings(MAX_TTS_TEXT_LENGTH=800)
+def test_render_audio_sanitizes_onboarding_copy_before_tts():
+    renderer = MagicMock(return_value=MEDIA_URL)
+    long_onboarding = get_customer_message(language="en", key="onboarding_intro")
+    safe_voice = get_customer_message(language="en", key="onboarding_intro_voice")
+
+    result = RenderAudioService(renderer=renderer).render(
+        {**VALIDATED_DATA, "text": long_onboarding, "conversation_language": "en"},
+    )
+
+    renderer.assert_called_once_with(text=safe_voice, voice="F1", lang="en")
+    assert result["status"] == "rendered"
+    assert "To open the menu" not in renderer.call_args.kwargs["text"]
 
 
 @override_settings(MAX_TTS_TEXT_LENGTH=10)

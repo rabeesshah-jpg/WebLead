@@ -183,7 +183,7 @@ OPENROUTER_MAX_TOKENS = _load_openrouter_max_tokens()
 
 
 def _load_openrouter_completion_max_tokens() -> int:
-    raw_value = env("OPENROUTER_COMPLETION_MAX_TOKENS", default="120") or "120"
+    raw_value = env("OPENROUTER_COMPLETION_MAX_TOKENS", default="400") or "400"
     try:
         max_tokens = int(raw_value)
     except (TypeError, ValueError) as exc:
@@ -288,6 +288,39 @@ QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS = (
     _load_qualification_idempotency_processing_ttl_seconds()
 )
 
+_QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS_ERROR = (
+    "QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS must be a positive number."
+)
+_QUALIFICATION_CONVERSATION_LOCK_TTL_SECONDS_ERROR = (
+    "QUALIFICATION_CONVERSATION_LOCK_TTL_SECONDS must be a positive integer."
+)
+
+
+def _load_qualification_conversation_lock_wait_seconds() -> float:
+    raw_value = env("QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS", default="6") or "6"
+    try:
+        wait_seconds = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS_ERROR) from exc
+    if wait_seconds <= 0:
+        raise ImproperlyConfigured(_QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS_ERROR)
+    return wait_seconds
+
+
+def _load_qualification_conversation_lock_ttl_seconds() -> int:
+    raw_value = env("QUALIFICATION_CONVERSATION_LOCK_TTL_SECONDS", default="60") or "60"
+    try:
+        ttl_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_QUALIFICATION_CONVERSATION_LOCK_TTL_SECONDS_ERROR) from exc
+    if ttl_seconds <= 0:
+        raise ImproperlyConfigured(_QUALIFICATION_CONVERSATION_LOCK_TTL_SECONDS_ERROR)
+    return ttl_seconds
+
+
+QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS = _load_qualification_conversation_lock_wait_seconds()
+QUALIFICATION_CONVERSATION_LOCK_TTL_SECONDS = _load_qualification_conversation_lock_ttl_seconds()
+
 _LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS_ERROR = (
     "LANGUAGE_PICKER_PENDING_TIMEOUT_SECONDS must be a positive integer."
 )
@@ -323,6 +356,25 @@ def _load_whatsapp_menu_inactivity_seconds() -> int:
 
 
 WHATSAPP_MENU_INACTIVITY_SECONDS = _load_whatsapp_menu_inactivity_seconds()
+
+_ONBOARDING_REINTRO_AFTER_SECONDS_ERROR = (
+    "ONBOARDING_REINTRO_AFTER_SECONDS must be a positive integer."
+)
+
+
+def _load_onboarding_reintro_after_seconds() -> int:
+    raw_value = env("ONBOARDING_REINTRO_AFTER_SECONDS", default="60") or "60"
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_ONBOARDING_REINTRO_AFTER_SECONDS_ERROR) from exc
+    if timeout_seconds <= 0:
+        raise ImproperlyConfigured(_ONBOARDING_REINTRO_AFTER_SECONDS_ERROR)
+    return timeout_seconds
+
+
+# Idle gap after which returning customers get welcome-back re-intro (2 hours).
+ONBOARDING_REINTRO_AFTER_SECONDS = _load_onboarding_reintro_after_seconds()
 
 _WHATSAPP_MENU_PENDING_SECONDS_ERROR = (
     "WHATSAPP_MENU_PENDING_SECONDS must be a positive integer."

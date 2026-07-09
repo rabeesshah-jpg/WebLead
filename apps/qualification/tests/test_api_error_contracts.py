@@ -26,6 +26,7 @@ from apps.qualification.tests.internal_api_test_helpers import (
     ERROR_CONTRACT_503,
     MOCK_VOICE_AUDIO_BYTES,
     MOCK_VOICE_AUDIO_DOWNLOAD,
+    OPENROUTER_FALLBACK_MESSAGE,
     assert_public_error_contract,
     internal_api_auth_headers,
 )
@@ -34,6 +35,8 @@ from apps.qualification.whatsapp_audio import (
     RenderAudioProcessingError,
     RenderAudioServiceUnavailableError,
 )
+
+pytestmark = pytest.mark.django_db
 
 EXTRACT_ENDPOINT = "/api/internal/qualification/extract/"
 RENDER_ENDPOINT = "/api/internal/qualification/render-audio/"
@@ -136,12 +139,23 @@ def test_extract_n8n_voice_payload_returns_200_with_transcript(
     side_effect=OpenRouterConfigurationError("missing"),
 )
 def test_extract_openrouter_configuration_failure_maps_to_503_contract(mock_extract, client):
+    from apps.qualification.models import WhatsAppConversationSession
+    from django.utils import timezone
+
+    from apps.qualification.domain.language_selection import LANGUAGE_ENGLISH
+
+    WhatsAppConversationSession.objects.create(
+        whatsapp_number="+923001234567",
+        language=LANGUAGE_ENGLISH,
+        language_selected_at=timezone.now(),
+    )
     response = _post_json(
         client,
         EXTRACT_ENDPOINT,
-        {"message": "hello", "whatsapp_number": "+923001234567"},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": "+923001234567"},
     )
     assert_public_error_contract(response, status_code=503, body=ERROR_CONTRACT_503)
+    mock_extract.assert_called_once()
 
 
 @patch(
@@ -149,10 +163,20 @@ def test_extract_openrouter_configuration_failure_maps_to_503_contract(mock_extr
     side_effect=QualificationServiceRequestError(),
 )
 def test_extract_service_request_failure_maps_to_502_contract(mock_turn, client):
+    from apps.qualification.models import WhatsAppConversationSession
+    from django.utils import timezone
+
+    from apps.qualification.domain.language_selection import LANGUAGE_ENGLISH
+
+    WhatsAppConversationSession.objects.create(
+        whatsapp_number="+923001234567",
+        language=LANGUAGE_ENGLISH,
+        language_selected_at=timezone.now(),
+    )
     response = _post_json(
         client,
         EXTRACT_ENDPOINT,
-        {"message": "hello", "whatsapp_number": "+923001234567"},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": "+923001234567"},
     )
     assert_public_error_contract(response, status_code=502, body=ERROR_CONTRACT_502_LLM)
 

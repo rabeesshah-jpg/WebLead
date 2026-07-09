@@ -45,11 +45,36 @@ class RenderAudioService:
         Generate a WhatsApp-compatible voice reply or return a controlled text-fallback
         payload without any HTTP response object.
         """
-        text = validated_data["text"]
-        validate_text_length(text)
-        stripped_text = text.strip()
+        raw_text = validated_data["text"]
+        from apps.qualification.domain.tts_safety import sanitize_spoken_text_for_tts
+
+        stripped_text = sanitize_spoken_text_for_tts(
+            str(raw_text).strip(),
+            language=self._resolve_conversation_language(validated_data),
+        )
         request_id = validated_data.get("request_id")
         request_id_prefix = message_sid_prefix(request_id)
+
+        if not stripped_text:
+            log_qualification_event(
+                "skipped_empty_spoken_text",
+                request_id_prefix=request_id_prefix,
+            )
+            return self._finalize_response(
+                {
+                    "status": "skipped_empty",
+                    "fallback_to_text": False,
+                    "conversation_language": self._resolve_conversation_language(validated_data),
+                    "media_url": None,
+                    "content_type": None,
+                    "audio_url": None,
+                    "audio_content_type": None,
+                    "request_id": request_id,
+                },
+                request_id=request_id,
+            )
+
+        validate_text_length(stripped_text)
 
         if request_id:
             cached = get_cached_render_response(request_id)

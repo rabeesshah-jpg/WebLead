@@ -22,24 +22,33 @@ Django downloads and transcribes voice notes server-side, then runs the same qua
 Every successful response includes:
 
 - `reply_mode`: `text` or `voice` based on the latest inbound `input_channel`
-- `reply_text`: the message to send back to the customer
+- `reply_text`: channel-facing copy (for voice, this matches `spoken_text` and never contains a URL)
+- `spoken_text`: what TTS / the voice agent should say (never contains a URL)
+- `whatsapp_text`: text that may be delivered as WhatsApp/SMS (may include the booking URL)
+- `actions`: reserved list (currently empty)
 - `conversation_language`: `en` or `ar` from persisted session state
-- `send_booking_link`: `true` when `qualification_status` is `completed`
+- `send_booking_link`: `true` for voice completion when a booking URL should be delivered as WhatsApp text
 - `booking_link`: booking URL when completed, otherwise `null`
 - `transcript`: present for voice-note input only
 
-When `qualification_status` is `completed`, `reply_text` is a short voice-safe completion line:
+Optional realtime/LiveKit request fields:
 
-`Thank you. I will send you a booking link now.`
+- `call_sid`, `utterance_id`, `is_final` — when `is_final=false`, partial STT is ignored; duplicate finals for the same call+utterance (or transcript hash within ~2.5s) return `duplicate_detected=true` and `tts_enqueued=false`
 
-Send the actual booking URL separately when `send_booking_link=true`.
+When `qualification_status` is `completed` on a **voice** turn:
+
+- `spoken_text` / `reply_text`: `Perfect, thank you. I'll send the booking link to your WhatsApp now.`
+- `whatsapp_text`: `Please book a time here: <BOOKING_LINK>`
+- `send_booking_link`: `true` (Django delivers the WhatsApp booking text once per session)
+
+When completed on a **text** turn, `reply_text` remains the single WhatsApp message that already includes the booking URL, and `send_booking_link` is `false`.
 
 ## n8n routing
 
 ### Text route (`reply_mode = "text"`)
 
 1. Use the existing Twilio WhatsApp send-message node.
-2. Put `reply_text` in the Twilio message body.
+2. Put `reply_text` (or `whatsapp_text`) in the Twilio message body.
 
 ### Voice route (`reply_mode = "voice"`)
 
@@ -47,7 +56,7 @@ Send the actual booking URL separately when `send_booking_link=true`.
 
 ```json
 {
-  "text": "={{ $json.reply_text }}",
+  "text": "={{ $json.spoken_text || $json.reply_text }}",
   "voice": "={{ $json.voice || '' }}",
   "request_id": "={{ $json.message_sid }}",
   "whatsapp_number": "={{ $json.whatsapp_number }}",
@@ -55,7 +64,7 @@ Send the actual booking URL separately when `send_booking_link=true`.
 }
 ```
 
-Do not hardcode `"lang": "en"` or `"lang": "ar"`. Django resolves the true conversation language from `WhatsAppConversationSession.language` using `whatsapp_number`.
+Do **not** pass a booking URL into render-audio. Django sanitizes URLs out of TTS input if one is passed by mistake.
 
 2. Branch on the render-audio response:
 

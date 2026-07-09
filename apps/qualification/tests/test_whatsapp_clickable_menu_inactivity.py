@@ -156,11 +156,21 @@ def test_active_user_within_inactivity_window_continues_normal_flow(mock_extract
 
 
 @override_settings(**MENU_SETTINGS)
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
-def test_inactive_user_after_threshold_gets_interactive_menu(mock_send_menu: MagicMock, client):
-    mock_send_menu.return_value = "SMclickablemenusent000000000000"
+def test_inactive_user_inbound_does_not_auto_open_menu(
+    mock_send_menu: MagicMock,
+    mock_extract,
+    client,
+):
+    """Normal inbound after idle must continue qualification, not auto-open menu."""
+    mock_extract.return_value = QualificationFieldFilterResult(
+        accepted_fields={},
+        rejected_fields=(),
+        human_handoff_requested=False,
+    )
     _seed_session(last_message_at=_inactive_last_message_at())
-    save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
 
     response = _post_extract(
         client,
@@ -172,11 +182,36 @@ def test_inactive_user_after_threshold_gets_interactive_menu(mock_send_menu: Mag
     body = response.json()
 
     assert response.status_code == 200
+    assert body.get("status") != "awaiting_menu_selection"
+    mock_send_menu.assert_not_called()
+    mock_extract.assert_called_once()
+    # 10 minutes idle is below the 2-hour welcome-back threshold.
+    welcome = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_welcome_back")
+    assert welcome not in body["reply_text"]
+    assert get_accepted_fields(VALID_WHATSAPP_NUMBER)["requirements"] == (
+        "A restaurant website with online ordering"
+    )
+
+
+@override_settings(**MENU_SETTINGS)
+@patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
+def test_inactivity_timer_event_source_still_opens_menu(mock_send_menu: MagicMock, client):
+    """Explicit timer jobs may still open the menu via event_source."""
+    mock_send_menu.return_value = "SMclickablemenusent000000000000"
+    _seed_session(last_message_at=_inactive_last_message_at())
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
+
+    payload = _text_payload(
+        message="timer tick",
+        message_sid="SM0cc5a1d9e22bf9850ca24261ee23cef9",
+    )
+    payload["event_source"] = "inactivity_timer"
+    response = _post_extract(client, payload)
+    body = response.json()
+
+    assert response.status_code == 200
     assert body["status"] == "awaiting_menu_selection"
-    assert "reply_text" not in body
     mock_send_menu.assert_called_once()
-    session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
-    assert session.last_menu_sent is True
 
 
 @override_settings(**MENU_SETTINGS)
@@ -186,7 +221,7 @@ def test_menu_button_payload_menu_restart_clears_state(mock_send_menu: MagicMock
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    _post_extract(client, _text_payload(message="menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea8"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea8"))
     response = _post_extract(
         client,
         _text_payload(
@@ -210,7 +245,7 @@ def test_menu_button_payload_menu_continue_resumes(mock_send_menu: MagicMock, cl
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
 
-    _post_extract(client, _text_payload(message="/menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceaa"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceaa"))
     response = _post_extract(
         client,
         _text_payload(
@@ -240,7 +275,7 @@ def test_menu_button_payload_menu_language_triggers_picker(
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    _post_extract(client, _text_payload(message="menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceac"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceac"))
     response = _post_extract(
         client,
         _text_payload(
@@ -263,7 +298,7 @@ def test_menu_button_payload_menu_human_requests_handoff(mock_send_menu: MagicMo
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    _post_extract(client, _text_payload(message="menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceae"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceae"))
     response = _post_extract(
         client,
         _text_payload(
@@ -297,25 +332,38 @@ def test_direct_restart_restarts_immediately(client):
 
 
 @override_settings(**MENU_SETTINGS)
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
 @patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="I am back now")
-def test_voice_transcript_after_inactivity_triggers_menu(
+def test_voice_transcript_after_inactivity_does_not_auto_open_menu(
     mock_transcribe: MagicMock,
     mock_download: MagicMock,
     mock_send_menu: MagicMock,
+    mock_extract,
     client,
 ):
-    mock_send_menu.return_value = "SMclickablemenusent000000000000"
+    mock_extract.return_value = QualificationFieldFilterResult(
+        accepted_fields={},
+        rejected_fields=(),
+        human_handoff_requested=False,
+    )
     _seed_session(last_message_at=_inactive_last_message_at())
-    save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
 
     response = _post_extract(client, _voice_payload(message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceb3"))
     body = response.json()
 
     assert response.status_code == 200
-    assert body["status"] == "awaiting_menu_selection"
-    mock_send_menu.assert_called_once()
+    assert body.get("status") != "awaiting_menu_selection"
+    mock_send_menu.assert_not_called()
+    mock_transcribe.assert_called_once()
+    welcome_voice = get_customer_message(
+        language=LANGUAGE_ENGLISH,
+        key="onboarding_welcome_back_voice",
+    )
+    # 10 minutes idle is below the 2-hour welcome-back threshold.
+    assert welcome_voice not in body["spoken_text"]
 
 
 @override_settings(**MENU_SETTINGS)
@@ -337,12 +385,12 @@ def test_language_is_preserved_after_restart(client):
 @patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
 def test_clickable_menu_template_sent_when_configured(mock_send_menu: MagicMock, client):
     mock_send_menu.return_value = "SMclickablemenusent000000000000"
-    _seed_session(last_message_at=_inactive_last_message_at())
+    _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
     response = _post_extract(
         client,
-        _text_payload(message="Hello again", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceb5"),
+        _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceb5"),
     )
     body = response.json()
 

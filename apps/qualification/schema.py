@@ -17,7 +17,7 @@ EXTRACTION_JSON_SCHEMA: dict = {
     "properties": {
         "project_type": {
             "type": ["string", "null"],
-            "enum": ["new_website", "website_upgrade", None],
+            "enum": ["new_website", "website_upgrade", "new_and_upgrade", None],
         },
         "requirements": {
             "type": ["string", "null"],

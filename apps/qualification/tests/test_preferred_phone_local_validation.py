@@ -23,7 +23,11 @@ PREFERRED_PHONE = "+923246271156"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 PHONE_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
-COMPLETION_REPLY_TEXT = get_customer_message(language="en", key="completion")
+COMPLETION_REPLY_TEXT = get_customer_message(
+    language="en",
+    key="completion_with_booking_link",
+    booking_link=BOOKING_LINK,
+)
 
 BASE_FIELDS = {
     "project_type": "new_website",
@@ -92,8 +96,9 @@ def test_valid_preferred_phone_is_accepted_without_openrouter(mock_extract, clie
     assert body["qualification_status"] == "completed"
     assert body["next_field"] is None
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
-    assert body["send_booking_link"] is True
+    assert body["send_booking_link"] is False
     assert body["booking_link_sent"] is True
+    assert BOOKING_LINK in body["reply_text"]
     assert get_accepted_fields(WHATSAPP_NUMBER)["project_type"] == "new_website"
     mock_extract.assert_not_called()
 
@@ -143,9 +148,11 @@ def test_arabic_session_uses_arabic_completion_message(mock_extract, mock_send_p
     assert body["conversation_language"] == LANGUAGE_ARABIC
     assert body["reply_text"] == get_customer_message(
         language=LANGUAGE_ARABIC,
-        key="completion",
+        key="completion_with_booking_link",
+        booking_link=BOOKING_LINK,
     )
     assert body["qualification_status"] == "completed"
+    assert body["send_booking_link"] is False
     mock_extract.assert_not_called()
 
 
@@ -248,24 +255,15 @@ def test_duplicate_message_sid_for_preferred_phone_is_idempotent(mock_extract, c
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_no_to_whatsapp_then_valid_phone_completes_without_openrouter(mock_extract, client):
-    mock_extract.side_effect = [
-        QualificationFieldFilterResult(
-            accepted_fields={
-                "project_type": "new_website",
-                "requirements": "I need a new website for my restaurant",
-            },
-            rejected_fields=(),
-            human_handoff_requested=False,
-        ),
-        QualificationFieldFilterResult(
-            accepted_fields={"referral_source": "Facebook"},
-            rejected_fields=(),
-            human_handoff_requested=False,
-        ),
-    ]
+    save_accepted_fields(
+        WHATSAPP_NUMBER,
+        {
+            "project_type": "new_website",
+            "requirements": "I need a new website for my restaurant",
+            "referral_source": "Facebook",
+        },
+    )
 
-    _post(client, "I need a new website for my restaurant.", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce90")
-    _post(client, "Facebook", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce92")
     _post(client, "No", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce93")
     mock_extract.reset_mock()
 

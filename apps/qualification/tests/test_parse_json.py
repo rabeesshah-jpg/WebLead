@@ -38,6 +38,20 @@ def test_valid_raw_json_response_parses_successfully():
     assert result.confidence.project_type == 0.95
 
 
+def test_markdown_wrapped_json_parses_successfully():
+    raw_json = json.dumps(_valid_payload(referral_source="Facebook"))
+    wrapped = f"```json\n{raw_json}\n```"
+    result = parse_extraction_json(wrapped)
+    assert result.referral_source == "Facebook"
+
+
+def test_extra_text_around_json_parses_successfully():
+    raw_json = json.dumps(_valid_payload(referral_source="Instagram"))
+    wrapped = f"Response:\n{raw_json}\nDone."
+    result = parse_extraction_json(wrapped)
+    assert result.referral_source == "Instagram"
+
+
 def test_malformed_json_is_rejected():
     with pytest.raises(ExtractionParseError, match="Invalid JSON in extraction response"):
         parse_extraction_json("{not valid json")
@@ -101,12 +115,12 @@ def test_website_repair_project_type_is_rejected():
 
     with pytest.raises(
         ExtractionParseError,
-        match="project_type must be new_website, website_upgrade, or null",
+        match="project_type must be new_website, website_upgrade, new_and_upgrade, or null",
     ):
         parse_extraction_payload(payload)
 
     allowed_values = EXTRACTION_JSON_SCHEMA["properties"]["project_type"]["enum"]
-    assert set(allowed_values) == {"new_website", "website_upgrade", None}
+    assert set(allowed_values) == {"new_website", "website_upgrade", "new_and_upgrade", None}
     assert "website_repair" not in allowed_values
 
 

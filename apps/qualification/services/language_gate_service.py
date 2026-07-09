@@ -95,12 +95,17 @@ def build_qualification_step_response(
     next_field = get_active_next_field(persisted_fields)
 
     if is_qualification_complete(persisted_fields):
+        from apps.qualification.domain.booking_completion import (
+            build_booking_completion_reply,
+        )
+
+        booking_fields = build_booking_completion_reply(language=normalized_language)
         return {
             "accepted_fields": persisted_fields,
             "rejected_fields": {},
             "human_handoff_requested": False,
             "next_field": None,
-            "reply_text": get_customer_message(language=normalized_language, key="completion"),
+            "reply_text": booking_fields["reply_text"],
             "qualification_status": "completed",
             "preferred_phone": persisted_fields.get("preferred_phone"),
             "conversation_language": normalized_language,
@@ -126,10 +131,11 @@ def build_language_change_continuation_response(
     whatsapp_number: str,
     language: str,
 ) -> dict[str, Any]:
-    """Return the next qualification step in the chosen language without resetting lead data."""
+    """Confirm language change and continue from the current pending question."""
     persisted_fields = get_accepted_fields(whatsapp_number)
     normalized_language = normalize_conversation_language(language)
     next_field = get_active_next_field(persisted_fields)
+    confirmation = get_language_changed_confirmation_message(language=normalized_language)
 
     if is_qualification_complete(persisted_fields):
         return {
@@ -137,18 +143,22 @@ def build_language_change_continuation_response(
             "rejected_fields": {},
             "human_handoff_requested": False,
             "next_field": None,
-            "reply_text": get_language_changed_confirmation_message(language=normalized_language),
+            "reply_text": confirmation,
             "qualification_status": "completed",
             "preferred_phone": persisted_fields.get("preferred_phone"),
             "conversation_language": normalized_language,
         }
 
+    question = get_qualification_question(
+        language=normalized_language,
+        field=next_field or "project_type",
+    )
     return {
         "accepted_fields": persisted_fields,
         "rejected_fields": {},
         "human_handoff_requested": False,
         "next_field": next_field,
-        "reply_text": get_language_changed_confirmation_message(language=normalized_language),
+        "reply_text": f"{confirmation}\n\n{question}",
         "qualification_status": "in_progress",
         "preferred_phone": persisted_fields.get("preferred_phone"),
         "conversation_language": normalized_language,
@@ -430,9 +440,17 @@ class LanguageGateService:
         user_message: str,
         language: str,
     ) -> dict[str, Any]:
+        from apps.qualification.domain.onboarding import maybe_prepend_onboarding_intro
+
         response = build_qualification_start_response(
             whatsapp_number=whatsapp_number,
             language=language,
+        )
+        response = maybe_prepend_onboarding_intro(
+            response,
+            whatsapp_number=whatsapp_number,
+            language=language,
+            input_channel=validated_data["input_channel"],
         )
         finalized = finalize_turn_response(
             response,

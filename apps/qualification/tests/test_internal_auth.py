@@ -18,6 +18,8 @@ from apps.qualification.tests.internal_api_test_helpers import (
     internal_api_auth_headers,
 )
 
+pytestmark = pytest.mark.django_db
+
 EXTRACT_ENDPOINT = "/api/internal/qualification/extract/"
 RENDER_ENDPOINT = "/api/internal/qualification/render-audio/"
 VALID_EXTRACT_PAYLOAD = {
@@ -50,17 +52,10 @@ def _post_json(client: Client, path: str, payload: dict, *, secret: str | None =
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_extract_endpoint_accepts_internal_webhook_secret_header(mock_extract, client):
-    from apps.qualification.models import QualificationFieldFilterResult
-
-    mock_extract.return_value = QualificationFieldFilterResult(
-        accepted_fields={"project_type": "new_website", "requirements": "restaurant site"},
-        rejected_fields=(),
-        human_handoff_requested=False,
-    )
-
     response = _post_json(client, EXTRACT_ENDPOINT, VALID_EXTRACT_PAYLOAD)
 
     assert response.status_code == 200
+    mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, PUBLIC_MEDIA_BASE_URL="https://tunnel.example.com")

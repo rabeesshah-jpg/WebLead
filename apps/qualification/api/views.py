@@ -82,6 +82,10 @@ class ExtractAPIView(APIView):
             message_sid=validated_data.get("message_sid"),
             media_url=validated_data.get("media_url"),
             media_content_type=validated_data.get("media_content_type"),
+            call_sid=validated_data.get("call_sid"),
+            utterance_id=validated_data.get("utterance_id"),
+            is_final=validated_data.get("is_final", True),
+            event_source=validated_data.get("event_source"),
         )
 
     def dispatch(self, request, *args, **kwargs):

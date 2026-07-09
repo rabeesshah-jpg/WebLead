@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Literal
 
 from apps.qualification.conversation_state import get_accepted_fields, save_accepted_fields
@@ -11,6 +10,21 @@ from apps.qualification.domain.messages import (
     QUESTIONS,
     get_customer_message,
     get_qualification_question,
+)
+from apps.qualification.domain.confirmation_reply import (
+    classify_whatsapp_confirmation_reply,
+    normalize_confirmation_message,
+)
+from apps.qualification.domain.inbound_message_classification import classify_inbound_message
+from apps.qualification.domain.inbound_message_responses import (
+    build_rich_inbound_response_metadata,
+    build_rich_qualification_reply,
+    build_whatsapp_confirmation_rich_reply,
+)
+from apps.qualification.domain.qualification_field_enrichment import (
+    apply_classification_to_fields,
+    merge_requirements,
+    merge_services_required,
 )
 from apps.qualification.domain.validators import (
     collapse_phone_formatting,
@@ -28,44 +42,12 @@ FIELD_ORDER: tuple[str, ...] = (
     "preferred_phone",
 )
 
-VALID_PROJECT_TYPES = frozenset({"new_website", "website_upgrade"})
+VALID_PROJECT_TYPES = frozenset({"new_website", "website_upgrade", "new_and_upgrade"})
 
 REJECTED_FIELD_REASON_CODES = {
     "null value": "value_missing",
     "confidence below threshold": "low_confidence",
 }
-
-_YES_CONFIRMATION_PHRASES: tuple[str, ...] = (
-    "yes",
-    "y",
-    "yep",
-    "yeah",
-    "yup",
-    "correct",
-    "sure",
-    "okay",
-    "ok",
-    "it is",
-    "this is best",
-    "yes it is",
-    "yes it's best",
-    "yes its best",
-    "it's best",
-    "its best",
-    "best number",
-    "this number is best",
-)
-
-_NO_CONFIRMATION_PHRASES: tuple[str, ...] = (
-    "no",
-    "n",
-    "nope",
-    "nah",
-    "not this number",
-    "no it is not",
-    "use another number",
-    "different number",
-)
 
 
 def _reply_text_for_next_field(
@@ -99,40 +81,146 @@ def get_active_next_field(persisted_fields: dict[str, Any]) -> str | None:
     return _next_missing_field(persisted_fields)
 
 
-def normalize_confirmation_message(message: str) -> str:
-    """Normalize inbound text for deterministic yes/no matching."""
-    normalized = message.strip().lower().replace("\u2019", "'")
-    normalized = re.sub(r"[^\w\s']", " ", normalized)
-    normalized = " ".join(normalized.split())
-    return normalized.strip(".,!?;:\"' ")
+def _apply_field_updates(
+    merged_fields: dict[str, Any],
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply enrichment updates while merging list and text fields."""
+    result = dict(merged_fields)
+    for field, value in updates.items():
+        if field == "services_required":
+            result[field] = merge_services_required(
+                result.get("services_required"),
+                tuple(value),
+            )
+        elif field == "requirements":
+            result[field] = merge_requirements(result.get("requirements"), str(value))
+        elif field == "project_type" and not result.get("project_type"):
+            result[field] = value
+        else:
+            result[field] = value
+    return result
 
 
-def _phrase_matches(normalized: str, phrase: str) -> bool:
-    if normalized == phrase:
-        return True
-    if len(phrase) == 1:
-        return normalized == phrase
-    pattern = rf"(?:^|\s){re.escape(phrase)}(?:\s|$)"
-    return bool(re.search(pattern, normalized))
+def try_handle_rich_inbound_qualification_turn(
+    *,
+    whatsapp_number: str,
+    message: str,
+    language: str = LANGUAGE_ENGLISH,
+) -> dict[str, Any] | None:
+    """
+    Handle services, requirements, and safe FAQ answers before OpenRouter fallback.
 
+    Runs during early qualification steps when the message carries actionable content.
+    """
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    active_field = get_active_next_field(persisted_fields)
+    if active_field in {"whatsapp_confirmed", "preferred_phone"}:
+        return None
 
-def classify_whatsapp_confirmation_reply(message: str) -> Literal["yes", "no", "unclear"]:
-    """Classify a customer reply to the WhatsApp confirmation question."""
-    normalized = normalize_confirmation_message(message)
+    classification = classify_inbound_message(message)
+    if classification.yes_confirmation or classification.no_confirmation:
+        return None
 
-    for phrase in _NO_CONFIRMATION_PHRASES:
-        if _phrase_matches(normalized, phrase):
-            return "no"
+    updates = apply_classification_to_fields(persisted_fields, classification)
+    saved_enrichment = bool(updates)
+    has_rich_content = (
+        saved_enrichment
+        or classification.has_user_question
+        or classification.unsupported_or_unclear_question
+        or classification.irrelevant_or_unclear
+    )
+    if not has_rich_content:
+        return None
 
-    for phrase in _YES_CONFIRMATION_PHRASES:
-        if _phrase_matches(normalized, phrase):
-            return "yes"
+    # Irrelevant alone: redirect politely without inventing new field values.
+    if classification.irrelevant_or_unclear and not saved_enrichment and not classification.has_user_question:
+        merged_fields = dict(persisted_fields)
+        next_field = _next_missing_field(merged_fields)
+        reply_text = build_rich_qualification_reply(
+            classification,
+            language=normalize_conversation_language(language),
+            saved_enrichment=False,
+            next_field=next_field,
+        )
+        return _with_conversation_language(
+            {
+                "accepted_fields": merged_fields,
+                "rejected_fields": {},
+                "human_handoff_requested": False,
+                "next_field": next_field,
+                "reply_text": reply_text,
+                "qualification_status": "in_progress",
+                "preferred_phone": merged_fields.get("preferred_phone"),
+                **build_rich_inbound_response_metadata(
+                    classification,
+                    {},
+                    next_field=next_field,
+                    complete=False,
+                ),
+            },
+            language=normalize_conversation_language(language),
+        )
 
-    return "unclear"
+    merged_fields = _apply_field_updates(persisted_fields, updates)
+    save_accepted_fields(whatsapp_number, merged_fields)
+    normalized_language = normalize_conversation_language(language)
+    next_field = _next_missing_field(merged_fields)
+
+    if _is_qualification_complete(merged_fields):
+        return _with_conversation_language(
+            {
+                "accepted_fields": merged_fields,
+                "rejected_fields": {},
+                "human_handoff_requested": False,
+                "next_field": None,
+                "reply_text": _completed_reply_text(language=normalized_language),
+                "qualification_status": "completed",
+                "preferred_phone": merged_fields.get("preferred_phone"),
+                **build_rich_inbound_response_metadata(
+                    classification,
+                    updates,
+                    next_field=None,
+                    complete=True,
+                ),
+            },
+            language=normalized_language,
+        )
+
+    reply_text = build_rich_qualification_reply(
+        classification,
+        language=normalized_language,
+        saved_enrichment=saved_enrichment,
+        next_field=next_field,
+    )
+    return _with_conversation_language(
+        {
+            "accepted_fields": merged_fields,
+            "rejected_fields": {},
+            "human_handoff_requested": False,
+            "next_field": next_field,
+            "reply_text": reply_text,
+            "qualification_status": "in_progress",
+            "preferred_phone": merged_fields.get("preferred_phone"),
+            **build_rich_inbound_response_metadata(
+                classification,
+                updates,
+                next_field=next_field,
+                complete=False,
+            ),
+        },
+        language=normalized_language,
+    )
+
 
 
 def _completed_reply_text(*, language: str = LANGUAGE_ENGLISH) -> str:
-    return get_customer_message(language=language, key="completion")
+    """Return interim completion copy; finalize_turn_response replaces this when a link exists."""
+    from apps.qualification.domain.booking_completion import (
+        build_booking_completion_reply,
+    )
+
+    return str(build_booking_completion_reply(language=language)["reply_text"])
 
 
 def build_completed_retry_response(
@@ -161,17 +249,25 @@ def try_handle_whatsapp_confirmation_turn(
     whatsapp_number: str,
     message: str,
     language: str = LANGUAGE_ENGLISH,
+    for_voice: bool = False,
 ) -> dict[str, Any] | None:
-    """Handle yes/no replies deterministically when whatsapp_confirmed is active."""
+    """
+    High-priority handler while WhatsApp confirmation is the active next field.
+
+    Yes confirms the WhatsApp number and completes qualification. No asks for an
+    alternate preferred phone. Any other meaningful reply is saved as requirement
+    detail and the confirmation question is re-asked without calling OpenRouter.
+    """
     persisted_fields = get_accepted_fields(whatsapp_number)
     if get_active_next_field(persisted_fields) != "whatsapp_confirmed":
         return None
 
     merged_fields = dict(persisted_fields)
-    classification = classify_whatsapp_confirmation_reply(message)
+    confirmation_reply = classify_whatsapp_confirmation_reply(message)
+    inbound_classification = classify_inbound_message(message)
     normalized_language = normalize_conversation_language(language)
 
-    if classification == "yes":
+    if confirmation_reply == "yes":
         merged_fields["whatsapp_confirmed"] = True
         merged_fields["preferred_phone"] = whatsapp_number
         save_accepted_fields(whatsapp_number, merged_fields)
@@ -184,11 +280,17 @@ def try_handle_whatsapp_confirmation_turn(
                 "reply_text": _completed_reply_text(language=normalized_language),
                 "qualification_status": "completed",
                 "preferred_phone": whatsapp_number,
+                **build_rich_inbound_response_metadata(
+                    inbound_classification,
+                    {},
+                    next_field=None,
+                    complete=True,
+                ),
             },
             language=normalized_language,
         )
 
-    if classification == "no":
+    if confirmation_reply == "no":
         merged_fields["whatsapp_confirmed"] = False
         save_accepted_fields(whatsapp_number, merged_fields)
         return _with_conversation_language(
@@ -197,9 +299,9 @@ def try_handle_whatsapp_confirmation_turn(
                 "rejected_fields": {},
                 "human_handoff_requested": False,
                 "next_field": "preferred_phone",
-                "reply_text": get_qualification_question(
+                "reply_text": get_customer_message(
                     language=normalized_language,
-                    field="preferred_phone",
+                    key="preferred_phone_after_whatsapp_decline",
                 ),
                 "qualification_status": "in_progress",
                 "preferred_phone": merged_fields.get("preferred_phone"),
@@ -207,18 +309,34 @@ def try_handle_whatsapp_confirmation_turn(
             language=normalized_language,
         )
 
+    updates = apply_classification_to_fields(merged_fields, inbound_classification)
+    saved_enrichment = bool(updates)
+    if saved_enrichment:
+        merged_fields = _apply_field_updates(merged_fields, updates)
+        save_accepted_fields(whatsapp_number, merged_fields)
+
+    reply_text = build_whatsapp_confirmation_rich_reply(
+        inbound_classification,
+        language=normalized_language,
+        saved_enrichment=saved_enrichment,
+        for_voice=for_voice,
+    )
+
     return _with_conversation_language(
         {
             "accepted_fields": merged_fields,
             "rejected_fields": {},
             "human_handoff_requested": False,
             "next_field": "whatsapp_confirmed",
-            "reply_text": get_customer_message(
-                language=normalized_language,
-                key="whatsapp_confirmation_unclear",
-            ),
+            "reply_text": reply_text,
             "qualification_status": "in_progress",
             "preferred_phone": merged_fields.get("preferred_phone"),
+            **build_rich_inbound_response_metadata(
+                inbound_classification,
+                updates,
+                next_field="whatsapp_confirmed",
+                complete=False,
+            ),
         },
         language=normalized_language,
     )

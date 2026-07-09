@@ -18,12 +18,16 @@ class ExtractionService:
         customer_message: str,
         known_whatsapp_number: str,
         phone_confirmation_question_asked: bool = False,
+        message_sid: str | None = None,
     ) -> QualificationFieldFilterResult:
         """
         Convert raw LLM output into the existing validated qualification
         extraction result using the existing domain modules.
         """
-        extraction = parse_extraction_json(provider_text)
+        extraction = parse_extraction_json(
+            provider_text,
+            message_sid=message_sid,
+        )
         guarded_extraction = apply_phone_confirmation_guard(
             extraction,
             customer_message,

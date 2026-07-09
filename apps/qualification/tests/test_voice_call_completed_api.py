@@ -122,7 +122,17 @@ def test_voice_call_completed_accepts_valid_event(
     mock_twilio_booking_link_send.assert_called_once()
     sent_body = mock_twilio_booking_link_send.call_args.kwargs["body"]
     assert BOOKING_LINK in sent_body
+    assert sent_body == (
+        f"Please book a time here: {BOOKING_LINK}"
+    )
+    assert "Perfect, thank you" not in sent_body
     assert mock_twilio_booking_link_send.call_args.kwargs["input_channel"] == "voice_call_completed"
+    assert body["spoken_text"] == (
+        "Perfect, thank you. I'll send the booking link to your WhatsApp now."
+    )
+    assert BOOKING_LINK not in body["spoken_text"]
+    assert body["whatsapp_text"] == sent_body
+    assert body["actions"] == []
 
 
 def test_voice_call_completed_duplicate_event_id_is_idempotent(

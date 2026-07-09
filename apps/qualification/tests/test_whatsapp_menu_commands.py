@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 
 from apps.qualification.domain.whatsapp_menu_commands import (
+    is_menu_command,
     parse_menu_button_payload,
+    parse_whatsapp_menu_command,
     resolve_menu_action,
 )
 
@@ -34,8 +36,42 @@ def test_numeric_text_is_not_treated_as_menu_selection():
     assert resolve_menu_action(message="2") is None
 
 
-def test_menu_command_still_parses():
-    resolved = resolve_menu_action(message="menu")
+@pytest.mark.parametrize(
+    "message",
+    [
+        "M",
+        " M ",
+        "\nM\n",
+    ],
+)
+def test_exact_uppercase_m_opens_menu(message: str):
+    assert is_menu_command(message) is True
+    assert parse_whatsapp_menu_command(message) == "show_menu"
+    resolved = resolve_menu_action(message=message)
     assert resolved is not None
     assert resolved.kind == "command"
     assert resolved.command == "show_menu"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "m",
+        "menu",
+        "Menu",
+        "MENU",
+        "/menu",
+        "i need your menu",
+        "menu please",
+        "open menu",
+        "can you show menu",
+        "I want M",
+        "M please",
+        "start",
+        "/start",
+    ],
+)
+def test_non_exact_uppercase_m_does_not_open_menu(message: str):
+    assert is_menu_command(message) is False
+    assert parse_whatsapp_menu_command(message) is None
+    assert resolve_menu_action(message=message) is None

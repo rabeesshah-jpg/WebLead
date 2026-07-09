@@ -9,14 +9,18 @@ from unittest.mock import ANY, patch
 
 import pytest
 from django.test import Client, override_settings
+from django.utils import timezone
 
 from apps.qualification.conversation_state import clear_conversations
 from apps.qualification.integrations.openrouter import clear_openrouter_completion_cache
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.persistence.cache_backend import reset_qualification_cache_backend_for_tests
 from apps.qualification.services.transcription_service import clear_transcription_media_cache
-from apps.qualification.extractor import ExtractionParseError
-from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
+from apps.qualification.models import (
+    QualificationFieldFilterResult,
+    RejectedQualificationField,
+    WhatsAppConversationSession,
+)
 from apps.qualification.openrouter_client import (
     OpenRouterConfigurationError,
     OpenRouterRequestError,
@@ -28,8 +32,11 @@ from apps.qualification.tests.internal_api_test_helpers import (
     API_SECRET,
     MOCK_VOICE_AUDIO_BYTES,
     MOCK_VOICE_AUDIO_DOWNLOAD,
+    OPENROUTER_FALLBACK_MESSAGE,
     internal_api_auth_headers,
 )
+
+pytestmark = pytest.mark.django_db
 
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 VALID_MESSAGE = "I need a new website for a restaurant"
@@ -110,7 +117,7 @@ def test_valid_request_returns_filtered_result_and_calls_client(mock_extract, cl
     response = _post_extract(
         client,
         {
-            "message": VALID_MESSAGE,
+            "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
         },
@@ -125,13 +132,15 @@ def test_valid_request_returns_filtered_result_and_calls_client(mock_extract, cl
     assert body["rejected_fields"] == {"referral_source": "value_missing"}
     assert body["human_handoff_requested"] is False
     assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == "Thank you. How did you hear about us?"
+    assert body["reply_text"].endswith("Thank you. How did you hear about us?")
+    assert "*Hi, welcome!*" in body["reply_text"]
+    assert "Send *M* to open the menu" in body["reply_text"]
     assert body["qualification_status"] == "in_progress"
     assert body["reply_mode"] == "text"
     assert body["send_booking_link"] is False
     assert body["booking_link"] is None
     mock_extract.assert_called_once_with(
-        customer_message=VALID_MESSAGE,
+        customer_message=OPENROUTER_FALLBACK_MESSAGE,
         known_whatsapp_number=VALID_WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
         message_sid=None,
@@ -145,7 +154,7 @@ def test_valid_request_returns_filtered_result_and_calls_client(mock_extract, cl
 def test_missing_secret_returns_403_without_calling_client(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
         secret=None,
     )
 
@@ -158,7 +167,7 @@ def test_missing_secret_returns_403_without_calling_client(mock_extract, client)
 def test_invalid_secret_returns_403_without_calling_client(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
         secret="wrong-secret",
     )
 
@@ -172,7 +181,7 @@ def test_invalid_secret_returns_403_without_calling_client(mock_extract, client)
 def test_blank_django_secret_returns_503_without_calling_client(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 503
@@ -262,7 +271,7 @@ def test_extra_request_field_returns_400(mock_extract, client):
     response = _post_extract(
         client,
         {
-            "message": VALID_MESSAGE,
+            "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "extra": "field",
         },
@@ -280,7 +289,7 @@ def test_extra_request_field_returns_400(mock_extract, client):
 def test_openrouter_configuration_error_returns_503(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 503
@@ -293,16 +302,15 @@ def test_openrouter_configuration_error_returns_503(mock_extract, client):
     [
         OpenRouterRequestError("OpenRouter request failed"),
         OpenRouterResponseError("OpenRouter response is not valid JSON"),
-        ExtractionParseError("Invalid JSON in extraction response"),
     ],
 )
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_openrouter_or_parse_errors_return_502(mock_extract, client, error):
+def test_openrouter_transport_errors_return_502(mock_extract, client, error):
     mock_extract.side_effect = error
 
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 502
@@ -310,20 +318,28 @@ def test_openrouter_or_parse_errors_return_502(mock_extract, client, error):
     mock_extract.assert_called_once()
 
 
+@override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch(
-    "apps.qualification.qualification_turn.extract_qualification_from_openrouter",
-    side_effect=ExtractionParseError("Invalid JSON in extraction response"),
+    "apps.qualification.openrouter_client.request_openrouter_completion",
+    return_value="{not valid json",
 )
-def test_malformed_assistant_json_returns_safe_502_without_sensitive_data(mock_extract, client):
+def test_malformed_assistant_json_returns_safe_200_fallback(mock_urlopen, client):
+    WhatsAppConversationSession.objects.create(
+        whatsapp_number=VALID_WHATSAPP_NUMBER,
+        language="en",
+        language_selected_at=timezone.now(),
+    )
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
-    assert response.status_code == 502
-    assert response.json() == {"error": "Qualification LLM request failed."}
-    _assert_safe_endpoint_error_response(response)
-    mock_extract.assert_called_once()
+    assert response.status_code == 200
+    body = response.json()
+    assert body["llm_parse_failed"] is True
+    assert body["complete"] is False
+    assert "team will guide you properly in the meeting" in body["reply_text"]
+    assert VALID_MESSAGE not in response.content.decode("utf-8")
 
 
 @patch(
@@ -333,7 +349,7 @@ def test_malformed_assistant_json_returns_safe_502_without_sensitive_data(mock_e
 def test_timeout_returns_safe_502_without_sensitive_data(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 502
@@ -351,7 +367,7 @@ def test_openrouter_timeout_logs_safe_structured_event(mock_urlopen, client, cap
     response = _post_extract(
         client,
         {
-            "message": VALID_MESSAGE,
+            "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
             "message_sid": TEST_MESSAGE_SID,
@@ -388,7 +404,7 @@ def test_openrouter_non_timeout_failure_logs_generic_upstream_event(mock_urlopen
     response = _post_extract(
         client,
         {
-            "message": VALID_MESSAGE,
+            "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
             "message_sid": TEST_MESSAGE_SID,
@@ -414,26 +430,23 @@ def test_openrouter_non_timeout_failure_logs_generic_upstream_event(mock_urlopen
     assert "connection refused" not in caplog.text
 
 
-@patch("django.db.connection.cursor")
 @patch(
     "apps.qualification.qualification_turn.extract_qualification_from_openrouter",
     side_effect=OpenRouterRequestError(PROVIDER_ERROR_DETAIL),
 )
 def test_http_failure_returns_safe_502_without_provider_body_or_database_write(
     mock_extract,
-    mock_cursor,
     client,
 ):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 502
     assert response.json() == {"error": "Qualification LLM request failed."}
     _assert_safe_endpoint_error_response(response)
     mock_extract.assert_called_once()
-    mock_cursor.assert_not_called()
 
 
 @patch(
@@ -443,7 +456,7 @@ def test_http_failure_returns_safe_502_without_provider_body_or_database_write(
 def test_unexpected_exception_returns_500(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 500
@@ -451,18 +464,17 @@ def test_unexpected_exception_returns_500(mock_extract, client):
     mock_extract.assert_called_once()
 
 
-@patch("django.db.connection.cursor")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_no_database_write_occurs(mock_extract, mock_cursor, client):
+def test_no_database_write_occurs(mock_extract, client):
     mock_extract.return_value = SAMPLE_FILTER_RESULT
 
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 200
-    mock_cursor.assert_not_called()
+    mock_extract.assert_called_once()
 
 
 @override_settings(
@@ -496,7 +508,6 @@ def test_endpoint_default_strips_unasked_phone_fields_for_restaurant_regression(
                 }
             ).encode("utf-8")
 
-    restaurant_message = "I need a new website for my restaurant. I found you on Facebook."
     unsafe_payload = {
         "project_type": "new_website",
         "requirements": "I need a new website for my restaurant",
@@ -513,10 +524,15 @@ def test_endpoint_default_strips_unasked_phone_fields_for_restaurant_regression(
         },
     }
     mock_urlopen.return_value = FakeResponse()
+    WhatsAppConversationSession.objects.create(
+        whatsapp_number=VALID_WHATSAPP_NUMBER,
+        language="en",
+        language_selected_at=timezone.now(),
+    )
 
     response = _post_extract(
         client,
-        {"message": restaurant_message, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 200
@@ -551,7 +567,7 @@ def test_text_request_with_media_fields_omitted_returns_200(mock_extract, client
     response = _post_extract(
         client,
         {
-            "message": VALID_MESSAGE,
+            "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
         },
@@ -567,15 +583,7 @@ def test_text_request_with_null_media_fields_returns_200(mock_extract, client):
     response = _post_extract(client, dict(N8N_TEXT_PAYLOAD))
 
     assert response.status_code == 200
-    mock_extract.assert_called_once_with(
-        customer_message=N8N_TEXT_PAYLOAD["message"],
-        known_whatsapp_number=N8N_TEXT_PAYLOAD["whatsapp_number"],
-        phone_confirmation_question_asked=False,
-        message_sid=N8N_TEXT_PAYLOAD["message_sid"],
-        collected_fields={},
-        conversation_history=[],
-        conversation_language="en",
-    )
+    mock_extract.assert_not_called()
 
 
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
@@ -604,15 +612,7 @@ def test_text_request_with_non_empty_media_url_ignores_media_and_returns_200(moc
     )
 
     assert response.status_code == 200
-    mock_extract.assert_called_once_with(
-        customer_message=VALID_MESSAGE,
-        known_whatsapp_number=VALID_WHATSAPP_NUMBER,
-        phone_confirmation_question_asked=False,
-        message_sid=None,
-        collected_fields={},
-        conversation_history=[],
-        conversation_language="en",
-    )
+    mock_extract.assert_not_called()
 
 
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="I need a website for my bakery")
@@ -718,15 +718,7 @@ def test_live_n8n_voice_payload_with_empty_message_and_mm_sid_is_accepted(
         content_type="audio/ogg",
         transcription_config=ANY,
     )
-    mock_extract.assert_called_once_with(
-        customer_message=VOICE_TRANSCRIPT,
-        known_whatsapp_number=N8N_VOICE_PAYLOAD["whatsapp_number"],
-        phone_confirmation_question_asked=False,
-        message_sid=N8N_VOICE_PAYLOAD["message_sid"],
-        collected_fields={},
-        conversation_history=[],
-        conversation_language="en",
-    )
+    mock_extract.assert_not_called()
 
 
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)

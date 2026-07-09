@@ -24,6 +24,8 @@ BOOKING_LINK = "https://booking.example.com/test-schedule"
 BASE_WEBHOOK_URL = "https://tunnel.example.com"
 PUBLIC_MEDIA_BASE_URL = "https://tunnel.example.com"
 QUALIFICATION_REDIS_URL = ""
+# Keep Supertonic timeouts short so accidental unmocked HTTP fails fast in tests.
+SUPERTONIC_TTS_TIMEOUT_SECONDS = 2
 SUPERTONIC_BASE_URL = "http://127.0.0.1:7788"
 SUPERTONIC_ENGLISH_VOICE = "F1"
 SUPERTONIC_ARABIC_ENABLED = False
@@ -34,6 +36,7 @@ TWILIO_WHATSAPP_MENU_CONTENT_SID = ""
 LEAD_QUALIFICATION_ENABLED = True
 WHATSAPP_MENU_INACTIVITY_SECONDS = 600
 WHATSAPP_MENU_PENDING_SECONDS = 600
+ONBOARDING_REINTRO_AFTER_SECONDS = 7200
 
 DATABASES = {
     "default": {

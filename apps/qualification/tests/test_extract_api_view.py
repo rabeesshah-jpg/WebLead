@@ -10,6 +10,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.qualification.conversation_state import clear_conversations
+from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
@@ -25,6 +26,7 @@ from apps.qualification.tests.internal_api_test_helpers import (
     EXTRACT_SUCCESS_FIELD_NAMES,
     MOCK_VOICE_AUDIO_BYTES,
     MOCK_VOICE_AUDIO_DOWNLOAD,
+    OPENROUTER_FALLBACK_MESSAGE,
     RENDER_AUDIO_SUCCESS_FIELD_NAMES,
     assert_public_error_contract,
     internal_api_auth_headers,
@@ -36,6 +38,10 @@ VALID_MESSAGE = "I need a new website for a restaurant"
 VALID_WHATSAPP_NUMBER = "+923001234567"
 TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
 VOICE_TRANSCRIPT = "I need a website for my bakery"
+_RICH_REPLY_BODY = "Thank you, I've noted that. Thank you. How did you hear about us?"
+_ONBOARDING_PREFIXED_REPLY = (
+    f"{get_customer_message(language='en', key='onboarding_intro')}\n\n{_RICH_REPLY_BODY}"
+)
 
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={
@@ -51,19 +57,28 @@ SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
 EXPECTED_TEXT_RESPONSE = {
     "accepted_fields": {
         "project_type": "new_website",
-        "requirements": "website for a restaurant",
+        "requirements": VALID_MESSAGE,
+        "services_required": ["new_website"],
     },
-    "rejected_fields": {"referral_source": "value_missing"},
+    "rejected_fields": {},
     "human_handoff_requested": False,
     "next_field": "referral_source",
-    "reply_text": "Thank you. How did you hear about us?",
+    "reply_text": _ONBOARDING_PREFIXED_REPLY,
     "qualification_status": "in_progress",
     "conversation_language": "en",
     "preferred_phone": None,
     "reply_mode": "text",
+    "spoken_text": _ONBOARDING_PREFIXED_REPLY,
+    "whatsapp_text": _ONBOARDING_PREFIXED_REPLY,
+    "actions": [],
     "send_booking_link": False,
     "booking_link_sent": False,
     "booking_link": None,
+    "classification": ["service_request", "requirement_detail"],
+    "saved_services": ["new_website"],
+    "saved_requirements": [VALID_MESSAGE],
+    "next_required_field": "referral_source",
+    "complete": False,
 }
 
 
@@ -176,6 +191,7 @@ def test_valid_text_request_returns_200_with_contract_body(mock_extract, client)
     assert body == EXPECTED_TEXT_RESPONSE
     assert "transcript" not in body
     assert "detail" not in body
+    mock_extract.assert_not_called()
 
 
 @pytest.mark.parametrize("payload", [[], "string-root", 123])
@@ -203,7 +219,7 @@ def test_message_sid_idempotency_returns_cached_response_without_second_turn(moc
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
 
 
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
@@ -241,11 +257,12 @@ def test_valid_voice_request_returns_200_with_transcript(
 def test_configuration_failure_returns_503(mock_extract, client):
     response = _post_extract(
         client,
-        {"message": VALID_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
+        {"message": OPENROUTER_FALLBACK_MESSAGE, "whatsapp_number": VALID_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 503
     assert response.json() == {"error": "Qualification service is unavailable."}
+    mock_extract.assert_called_once()
 
 
 @patch(

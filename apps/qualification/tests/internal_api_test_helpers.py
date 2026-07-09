@@ -7,6 +7,7 @@ from typing import Any
 from apps.qualification.internal_auth import QUALIFICATION_SECRET_HEADER_NAME
 
 API_SECRET = "test-n8n-qualification-api-secret"
+OPENROUTER_FALLBACK_MESSAGE = "Friend recommended your agency"
 MOCK_VOICE_AUDIO_BYTES = b"\x00" * 128
 MOCK_VOICE_AUDIO_DOWNLOAD = (MOCK_VOICE_AUDIO_BYTES, "audio/ogg")
 INTERNAL_API_SECRET_META_KEY = "HTTP_" + QUALIFICATION_SECRET_HEADER_NAME.upper().replace("-", "_")
@@ -31,9 +32,18 @@ EXTRACT_SUCCESS_FIELD_NAMES = frozenset(
         "conversation_language",
         "preferred_phone",
         "reply_mode",
+        "spoken_text",
+        "whatsapp_text",
+        "actions",
         "send_booking_link",
         "booking_link_sent",
         "booking_link",
+        # Rich inbound / turn metadata (present when classification runs).
+        "classification",
+        "saved_services",
+        "saved_requirements",
+        "next_required_field",
+        "complete",
     },
 )
 

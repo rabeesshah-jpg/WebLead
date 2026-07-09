@@ -12,7 +12,11 @@ from django.utils import timezone
 from apps.qualification.conversation_flow import QUESTIONS
 from apps.qualification.conversation_state import clear_conversations, save_accepted_fields
 from apps.qualification.domain.language_selection import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
+from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.message_idempotency import clear_message_sid_cache, get_cached_turn_response
+from apps.qualification.integrations.twilio_language_picker import (
+    TwilioLanguagePickerConfigurationError,
+)
 from apps.qualification.models import QualificationFieldFilterResult, WhatsAppConversationSession
 from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
 
@@ -24,6 +28,12 @@ MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 VOICE_MESSAGE_SID = "MM0cc5a1d9e22bf9850ca24261ee23ce90"
 TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
 ARABIC_FIRST_QUESTION = "ما نوع الموقع الإلكتروني الذي تحتاجه؟"
+
+
+def _with_onboarding_intro(*, language: str, question: str) -> str:
+    intro = get_customer_message(language=language, key="onboarding_intro")
+    return f"{intro}\n\n{question}"
+
 
 LANGUAGE_PICKER_SETTINGS = {
     "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
@@ -136,7 +146,10 @@ def test_lang_en_button_saves_language_and_starts_qualification(mock_extract, mo
     session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
     assert session.language == LANGUAGE_ENGLISH
     assert session.language_selected_at is not None
-    assert response.json()["reply_text"] == QUESTIONS["project_type"]
+    assert response.json()["reply_text"] == _with_onboarding_intro(
+        language=LANGUAGE_ENGLISH,
+        question=QUESTIONS["project_type"],
+    )
     assert response.json()["conversation_language"] == LANGUAGE_ENGLISH
     assert response.json()["qualification_status"] == "in_progress"
     mock_send_picker.assert_not_called()
@@ -156,7 +169,10 @@ def test_lang_ar_button_saves_arabic_and_starts_qualification(mock_extract, mock
     session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
     assert session.language == LANGUAGE_ARABIC
     assert session.language_selected_at is not None
-    assert response.json()["reply_text"] == ARABIC_FIRST_QUESTION
+    assert response.json()["reply_text"] == _with_onboarding_intro(
+        language=LANGUAGE_ARABIC,
+        question=ARABIC_FIRST_QUESTION,
+    )
     assert response.json()["conversation_language"] == LANGUAGE_ARABIC
     mock_send_picker.assert_not_called()
     mock_extract.assert_not_called()
@@ -180,7 +196,7 @@ def test_existing_english_conversation_continues_qualification(mock_extract, moc
 
     assert response.status_code == 200
     mock_send_picker.assert_not_called()
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
@@ -204,7 +220,10 @@ def test_pending_picker_body_english_only_when_language_unset(mock_extract, mock
     session.refresh_from_db()
     assert session.language == LANGUAGE_ENGLISH
     assert session.language_picker_pending_until is None
-    assert second.json()["reply_text"] == QUESTIONS["project_type"]
+    assert second.json()["reply_text"] == _with_onboarding_intro(
+        language=LANGUAGE_ENGLISH,
+        question=QUESTIONS["project_type"],
+    )
     mock_extract.assert_not_called()
 
 
@@ -244,8 +263,14 @@ def test_duplicate_message_sid_does_not_send_duplicate_selector(mock_send_picker
 
 
 @override_settings(TWILIO_LANGUAGE_PICKER_CONTENT_SID="")
+@patch(
+    "apps.qualification.services.language_gate_service.send_language_picker",
+    side_effect=TwilioLanguagePickerConfigurationError(
+        "TWILIO_LANGUAGE_PICKER_CONTENT_SID is not configured",
+    ),
+)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_missing_content_sid_returns_503_without_openrouter(mock_extract, client):
+def test_missing_content_sid_returns_503_without_openrouter(mock_extract, mock_send_picker, client):
     response = _post_extract(client, _text_payload(message="hello"))
 
     assert response.status_code == 503
@@ -287,4 +312,4 @@ def test_redis_progress_lazy_backfills_english_without_selector(mock_extract, mo
     session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
     assert session.language == LANGUAGE_ENGLISH
     mock_send_picker.assert_not_called()
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()

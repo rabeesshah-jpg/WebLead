@@ -7,7 +7,7 @@ from typing import Literal
 
 from django.db import models
 
-ProjectType = Literal["new_website", "website_upgrade"]
+ProjectType = Literal["new_website", "website_upgrade", "new_and_upgrade"]
 
 
 @dataclass(frozen=True)
@@ -66,9 +66,12 @@ class WhatsAppConversationSession(models.Model):
     last_menu_sent = models.BooleanField(default=False, db_index=True)
     last_menu_id = models.CharField(max_length=64, null=True, blank=True)
     last_menu_timestamp = models.DateTimeField(null=True, blank=True, db_index=True)
+    # last_message_at is the last inbound customer activity timestamp (last_inbound_at).
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
     human_handoff_requested_at = models.DateTimeField(null=True, blank=True, db_index=True)
     booking_link_sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    onboarding_intro_sent = models.BooleanField(default=True, db_index=True)
+    last_onboarding_intro_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         db_table = "qualification_whatsapp_conversation_session"

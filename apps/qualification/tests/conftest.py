@@ -15,3 +15,13 @@ def mock_twilio_booking_link_send():
         return_value="SMbookinglink0000000000000001",
     ) as mock_send:
         yield mock_send
+
+
+@pytest.fixture(autouse=True)
+def mock_language_picker_send():
+    """Prevent real Twilio language-picker sends during extract/menu API tests."""
+    with patch(
+        "apps.qualification.services.language_gate_service.send_language_picker",
+        return_value="SMpicker000000000000000000000001",
+    ) as mock_send:
+        yield mock_send

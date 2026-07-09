@@ -150,7 +150,7 @@ def test_english_voice_note_uses_english_deepgram_configuration(
         content_type="audio/ogg",
         transcription_config=english_config,
     )
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
 
 
 @override_settings(**DEEPGRAM_SETTINGS)
@@ -221,7 +221,7 @@ def test_duplicate_voice_message_sid_does_not_retranscribe(
     assert second.json() == first.json()
     mock_download.assert_called_once()
     mock_transcribe.assert_called_once()
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
     assert get_cached_turn_response(duplicate_sid) is not None
 
 

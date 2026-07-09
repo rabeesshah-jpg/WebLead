@@ -18,14 +18,27 @@ pytestmark = pytest.mark.django_db
 
 
 def test_english_message_lookup_returns_existing_english_text():
-    assert (
-        get_customer_message(language=LANGUAGE_ENGLISH, key="project_type")
-        == "Are you looking for a new website or an upgrade to your existing website?"
+    assert get_customer_message(language=LANGUAGE_ENGLISH, key="project_type") == (
+        "*To get started:*\n"
+        "Are you looking for a *new website*, an *upgrade to your existing website*, "
+        "or *both*?"
     )
     assert (
         get_customer_message(language=LANGUAGE_ENGLISH, key="preferred_phone")
         == "Please share the best phone number to reach you."
     )
+
+
+def test_onboarding_and_welcome_back_copy_uses_whatsapp_formatting():
+    intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
+    welcome = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_welcome_back")
+    assert intro.startswith("*Hi, welcome!*")
+    assert "Send *M* to open the menu" in intro
+    assert "send *M* and choose *Change language*" in intro
+    assert "reply by *text* or *voice note*" in intro
+    assert welcome.startswith("*Welcome back!*")
+    assert "Send *M* to open the menu" in welcome
+    assert "send *M* and choose *Change language*" in welcome
 
 
 def test_arabic_message_lookup_returns_arabic_text():
@@ -47,21 +60,36 @@ def test_all_required_message_keys_exist_for_both_languages():
             assert catalog[key].strip()
 
 
+def test_language_changed_keys_are_language_specific():
+    assert "language_changed_to_english" in QUALIFICATION_MESSAGES[LANGUAGE_ENGLISH]
+    assert "language_changed_to_arabic" in QUALIFICATION_MESSAGES[LANGUAGE_ARABIC]
+    assert "language_changed_to_arabic" not in QUALIFICATION_MESSAGES[LANGUAGE_ENGLISH]
+    assert "language_changed_to_english" not in QUALIFICATION_MESSAGES[LANGUAGE_ARABIC]
+
+
 def test_language_changed_confirmation_messages_exist():
     assert (
         get_language_changed_confirmation_message(language=LANGUAGE_ENGLISH)
-        == "Language changed to English. We'll continue from where we left off."
+        == "Language set to English. We can continue from here."
     )
     assert (
         get_language_changed_confirmation_message(language=LANGUAGE_ARABIC)
-        == "تم تغيير اللغة إلى العربية. سنكمل من حيث توقفنا."
+        == "تم ضبط اللغة إلى العربية. يمكننا المتابعة من هنا."
     )
 
 
 def test_unsupported_language_falls_back_to_english():
     assert (
-        get_customer_message(language="fr", key="completion")
-        == get_customer_message(language=LANGUAGE_ENGLISH, key="completion")
+        get_customer_message(
+            language="fr",
+            key="completion_with_booking_link",
+            booking_link="https://example.com",
+        )
+        == get_customer_message(
+            language=LANGUAGE_ENGLISH,
+            key="completion_with_booking_link",
+            booking_link="https://example.com",
+        )
     )
     assert (
         get_qualification_question(language="unknown", field="requirements")

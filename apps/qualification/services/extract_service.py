@@ -22,14 +22,33 @@ from apps.qualification.domain.latency_profiling import (
 from apps.qualification.domain.language import get_conversation_language
 from apps.qualification.domain.whatsapp_menu_logging import log_whatsapp_menu_event
 from apps.qualification.domain.whatsapp_menu_payload import extract_menu_selection_payload
+from apps.qualification.conversation_lock import (
+    acquire_conversation_turn_lock,
+    build_conversation_lock_timeout_response,
+)
+from apps.qualification.domain.conversation_lock_key import normalize_conversation_lock_key
+from apps.qualification.domain.logging_utils import (
+    lock_key_prefix,
+    message_sid_prefix,
+    whatsapp_number_prefix,
+)
+from apps.qualification.domain.validators import normalize_whatsapp_session_number
+from apps.qualification.domain.onboarding import (
+    maybe_prepend_onboarding_intro,
+    should_reset_qualification_after_inactivity,
+)
 from apps.qualification.message_idempotency import (
     begin_idempotent_turn,
     cache_turn_response,
+    get_cached_turn_response,
 )
 from apps.qualification.qualification_turn import handle_qualification_turn
 from apps.qualification.services.booking_link_delivery_service import (
     ensure_booking_link_delivery_on_response,
     reconcile_stale_booking_link_sent_state,
+)
+from apps.qualification.services.conversation_restart_service import (
+    reset_qualification_progress_after_inactivity,
 )
 from apps.qualification.services.conversation_session_service import (
     get_or_create_conversation_session,
@@ -40,6 +59,11 @@ from apps.qualification.services.transcription_service import VoiceNoteTranscrip
 from apps.qualification.services.whatsapp_menu_service import (
     WhatsAppMenuService,
     is_lead_qualification_enabled,
+)
+from apps.qualification.voice_turn_idempotency import (
+    begin_voice_utterance_turn,
+    build_transcript_hash,
+    cache_voice_utterance_response,
 )
 
 TurnHandler = Callable[..., dict[str, Any]]
@@ -234,18 +258,135 @@ class ExtractService:
         Run one qualification turn and return the exact current endpoint
         response payload without any HTTP response object.
         """
-        session, _created = get_or_create_conversation_session(
-            whatsapp_number=validated_data["whatsapp_number"],
-        )
-        whatsapp_number = session.whatsapp_number
         validated_data = dict(validated_data)
+        whatsapp_number = normalize_whatsapp_session_number(validated_data["whatsapp_number"])
         validated_data["whatsapp_number"] = whatsapp_number
 
         message_sid = validated_data.get("message_sid")
         input_channel = validated_data["input_channel"]
-        reconcile_stale_booking_link_sent_state(whatsapp_number=whatsapp_number)
+        call_sid = validated_data.get("call_sid")
+        utterance_id = validated_data.get("utterance_id")
+        is_final = validated_data.get("is_final", True)
         reset_external_api_accumulator()
         reset_step_duration_tracker()
+
+        # LiveKit / realtime STT: ignore interim/partial transcripts entirely.
+        if is_final is False:
+            from apps.qualification.api.logging import log_qualification_event
+
+            log_qualification_event(
+                "voice_partial_transcript_ignored",
+                call_sid=call_sid,
+                utterance_id=utterance_id,
+                duplicate_detected=False,
+                tts_enqueued=False,
+            )
+            return {
+                "accepted_fields": get_accepted_fields(whatsapp_number),
+                "rejected_fields": {},
+                "human_handoff_requested": False,
+                "next_field": None,
+                "reply_text": "",
+                "spoken_text": "",
+                "whatsapp_text": "",
+                "actions": [],
+                "qualification_status": "in_progress",
+                "conversation_language": get_conversation_language(whatsapp_number),
+                "preferred_phone": None,
+                "reply_mode": "voice" if input_channel == "whatsapp_voice_note" else "text",
+                "send_booking_link": False,
+                "booking_link_sent": False,
+                "booking_link": None,
+                "tts_enqueued": False,
+                "duplicate_detected": False,
+            }
+
+        if message_sid:
+            cached_complete = get_cached_turn_response(message_sid)
+            if cached_complete is not None:
+                response_payload = self._deliver_booking_link_if_needed(
+                    dict(cached_complete),
+                    whatsapp_number=whatsapp_number,
+                    message_sid=message_sid,
+                    input_channel=input_channel,
+                )
+                if response_payload != cached_complete and message_sid:
+                    cache_turn_response(message_sid, response_payload)
+                log_external_api_total(message_sid=message_sid)
+                return response_payload
+
+        lock_key = normalize_conversation_lock_key(whatsapp_number)
+        lock_handle = acquire_conversation_turn_lock(lock_key)
+        from apps.qualification.api.logging import log_qualification_event
+
+        log_qualification_event(
+            "qualification_conversation_lock",
+            message_sid_prefix=message_sid_prefix(message_sid),
+            whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+            lock_key_prefix=lock_key_prefix(lock_key),
+            lock_acquired=lock_handle.acquired,
+            lock_wait_ms=lock_handle.wait_ms,
+            lock_timeout=lock_handle.timed_out,
+            input_channel=input_channel,
+            media_url_present=bool(validated_data.get("media_url")),
+        )
+        try:
+            if lock_handle.timed_out:
+                response_payload = build_conversation_lock_timeout_response(
+                    whatsapp_number=whatsapp_number,
+                    input_channel=input_channel,
+                )
+                log_qualification_event(
+                    "qualification_conversation_lock",
+                    message_sid_prefix=message_sid_prefix(message_sid),
+                    whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+                    lock_key_prefix=lock_key_prefix(lock_key),
+                    lock_released=True,
+                    input_channel=input_channel,
+                    media_url_present=bool(validated_data.get("media_url")),
+                    response_sent_or_empty=True,
+                )
+                return response_payload
+
+            return self._run_turn_under_conversation_lock(
+                validated_data,
+                whatsapp_number=whatsapp_number,
+                message_sid=message_sid,
+                input_channel=input_channel,
+                call_sid=call_sid,
+                utterance_id=utterance_id,
+                is_final=is_final,
+            )
+        finally:
+            lock_handle.release()
+            log_qualification_event(
+                "qualification_conversation_lock",
+                message_sid_prefix=message_sid_prefix(message_sid),
+                whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+                lock_key_prefix=lock_key_prefix(lock_key),
+                lock_released=True,
+                input_channel=input_channel,
+                media_url_present=bool(validated_data.get("media_url")),
+            )
+
+    def _run_turn_under_conversation_lock(
+        self,
+        validated_data: dict[str, Any],
+        *,
+        whatsapp_number: str,
+        message_sid: str | None,
+        input_channel: str,
+        call_sid: str | None,
+        utterance_id: str | None,
+        is_final: bool,
+    ) -> dict[str, Any]:
+        session, _created = get_or_create_conversation_session(
+            whatsapp_number=whatsapp_number,
+        )
+        whatsapp_number = session.whatsapp_number
+        validated_data = dict(validated_data)
+        validated_data["whatsapp_number"] = whatsapp_number
+        reconcile_stale_booking_link_sent_state(whatsapp_number=whatsapp_number)
 
         if message_sid:
             idempotency_started = time.perf_counter()
@@ -316,6 +457,21 @@ class ExtractService:
         if input_channel == "whatsapp_voice_note" and message:
             transcript = message
 
+        voice_turn_key_active = False
+        if call_sid and message and is_final is not False:
+            cached_voice = begin_voice_utterance_turn(
+                call_sid=call_sid,
+                utterance_id=utterance_id,
+                transcript=message,
+            )
+            if cached_voice is not None:
+                duplicate = dict(cached_voice)
+                duplicate["duplicate_detected"] = True
+                duplicate["tts_enqueued"] = False
+                log_external_api_total(message_sid=message_sid)
+                return duplicate
+            voice_turn_key_active = True
+
         if message:
             menu_payload = dict(validated_data)
             menu_payload["message"] = message
@@ -337,6 +493,21 @@ class ExtractService:
             if inactivity_response is not None:
                 return inactivity_response
 
+        session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
+        session.refresh_from_db()
+        if should_reset_qualification_after_inactivity(session):
+            from apps.qualification.api.logging import log_qualification_event
+
+            reset_qualification_progress_after_inactivity(
+                whatsapp_number=whatsapp_number,
+                session=session,
+            )
+            log_qualification_event(
+                "qualification_reset_after_inactivity",
+                whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+                message_sid_prefix=message_sid_prefix(message_sid),
+            )
+
         if is_qualification_complete(get_accepted_fields(whatsapp_number)):
             turn_response = build_completed_retry_response(
                 whatsapp_number,
@@ -348,6 +519,7 @@ class ExtractService:
                 whatsapp_number=whatsapp_number,
                 message=message,
                 message_sid=message_sid,
+                for_voice=input_channel == "whatsapp_voice_note" or bool(call_sid),
             )
             log_latency_step(
                 "qualification_turn_handler",
@@ -356,6 +528,12 @@ class ExtractService:
             )
 
         finalize_started = time.perf_counter()
+        turn_response = maybe_prepend_onboarding_intro(
+            turn_response,
+            whatsapp_number=whatsapp_number,
+            language=conversation_language,
+            input_channel=input_channel,
+        )
         response_payload = finalize_turn_response(
             turn_response,
             input_channel=input_channel,
@@ -374,6 +552,28 @@ class ExtractService:
             message_sid=message_sid,
             input_channel=input_channel,
         )
+
+        if call_sid and message:
+            from apps.qualification.api.logging import log_qualification_event
+
+            # Exactly one TTS payload per successfully processed voice utterance.
+            response_payload["tts_enqueued"] = bool(response_payload.get("spoken_text"))
+            response_payload["duplicate_detected"] = False
+            log_qualification_event(
+                "voice_turn_tts_decision",
+                call_sid=call_sid,
+                utterance_id=utterance_id,
+                transcript_hash=build_transcript_hash(message),
+                duplicate_detected=False,
+                tts_enqueued=response_payload["tts_enqueued"],
+            )
+            if voice_turn_key_active:
+                cache_voice_utterance_response(
+                    call_sid=call_sid,
+                    utterance_id=utterance_id,
+                    transcript=message,
+                    response=response_payload,
+                )
 
         if message_sid:
             cache_started = time.perf_counter()

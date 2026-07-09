@@ -106,9 +106,9 @@ def test_pipeline_order_parse_then_phone_guard_then_filter():
     original_phone = phone_confirmation.apply_phone_confirmation_guard
     original_filter = filtering.filter_qualification_fields
 
-    def _parse(text: str):
+    def _parse(text: str, *, message_sid=None):
         call_order.append("parse")
-        return original_parse(text)
+        return original_parse(text, message_sid=message_sid)
 
     def _phone(extraction, *args, **kwargs):
         call_order.append("phone")

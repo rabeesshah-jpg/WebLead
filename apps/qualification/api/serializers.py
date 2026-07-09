@@ -30,10 +30,15 @@ ALLOWED_REQUEST_FIELDS = frozenset(
         "button_type",
         "interactive_data",
         "channel_metadata",
+        "call_sid",
+        "utterance_id",
+        "is_final",
+        # Explicit background/timer source only; never set for normal WhatsApp inbound.
+        "event_source",
     },
 )
 VOICE_CALL_COMPLETED_EVENT = "voice_call.completed"
-VALID_PROJECT_TYPES = frozenset({"new_website", "website_upgrade"})
+VALID_PROJECT_TYPES = frozenset({"new_website", "website_upgrade", "new_and_upgrade"})
 ALLOWED_VOICE_CALL_COMPLETED_FIELDS = frozenset(
     {
         "event",
@@ -253,7 +258,16 @@ class ExtractRequestSerializer(serializers.Serializer):
             "button_type": button_type,
             "interactive_data": interactive_data,
             "channel_metadata": channel_metadata,
+            "call_sid": _normalize_optional_string(payload.get("call_sid")),
+            "utterance_id": _normalize_optional_string(payload.get("utterance_id")),
+            "event_source": _normalize_optional_string(payload.get("event_source")),
+            "is_final": True,
         }
+
+        if "is_final" in payload:
+            if not isinstance(payload["is_final"], bool):
+                raise serializers.ValidationError("Invalid is_final.")
+            common_fields["is_final"] = payload["is_final"]
 
         if input_channel == "whatsapp_text":
             if not normalized_message:
@@ -312,11 +326,33 @@ class ExtractResponseSerializer(serializers.Serializer):
     conversation_language = serializers.CharField()
     preferred_phone = serializers.CharField(allow_null=True, required=False)
     reply_mode = serializers.CharField()
+    spoken_text = serializers.CharField(required=False)
+    whatsapp_text = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    actions = serializers.ListField(required=False, child=serializers.DictField())
     send_booking_link = serializers.BooleanField()
     booking_link_sent = serializers.BooleanField()
     booking_link = serializers.CharField(allow_null=True)
     transcript = serializers.CharField(required=False, allow_null=True)
     language_command_action = serializers.CharField(required=False, allow_null=True)
+    tts_enqueued = serializers.BooleanField(required=False)
+    duplicate_detected = serializers.BooleanField(required=False)
+    llm_parse_failed = serializers.BooleanField(required=False)
+    complete = serializers.BooleanField(required=False)
+    classification = serializers.ListField(
+        required=False,
+        child=serializers.CharField(),
+    )
+    saved_services = serializers.ListField(
+        required=False,
+        child=serializers.CharField(),
+    )
+    saved_requirements = serializers.ListField(
+        required=False,
+        child=serializers.CharField(),
+    )
+    next_required_field = serializers.CharField(required=False, allow_null=True)
+    duplicate_or_locked = serializers.BooleanField(required=False)
+    lock_timeout = serializers.BooleanField(required=False)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -324,6 +360,23 @@ class ExtractResponseSerializer(serializers.Serializer):
             data.pop("transcript", None)
         if "language_command_action" not in instance:
             data.pop("language_command_action", None)
+        for optional_key in (
+            "spoken_text",
+            "whatsapp_text",
+            "actions",
+            "tts_enqueued",
+            "duplicate_detected",
+            "llm_parse_failed",
+            "complete",
+            "classification",
+            "saved_services",
+            "saved_requirements",
+            "next_required_field",
+            "duplicate_or_locked",
+            "lock_timeout",
+        ):
+            if optional_key not in instance:
+                data.pop(optional_key, None)
         return data
 
 
@@ -429,9 +482,19 @@ class VoiceCallCompletedResponseSerializer(serializers.Serializer):
     call_id = serializers.CharField()
     accepted_fields = serializers.DictField(child=serializers.JSONField())
     qualification_status = serializers.CharField()
+    spoken_text = serializers.CharField(required=False, allow_null=True)
+    whatsapp_text = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    actions = serializers.ListField(required=False, child=serializers.DictField())
     send_booking_link = serializers.BooleanField()
     booking_link_sent = serializers.BooleanField()
     booking_link = serializers.CharField(allow_null=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for optional_key in ("spoken_text", "whatsapp_text", "actions"):
+            if optional_key not in instance:
+                data.pop(optional_key, None)
+        return data
 
 
 class RenderAudioRequestSerializer(serializers.Serializer):

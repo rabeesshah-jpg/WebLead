@@ -39,6 +39,11 @@ def test_conversation_state_persists_across_backend_access():
     assert get_accepted_fields("+923001234567") == {"project_type": "new_website"}
 
 
+def test_conversation_state_normalizes_whatsapp_number_formats():
+    save_accepted_fields("+92 300 1234567", {"project_type": "new_website"})
+    assert get_accepted_fields("whatsapp:+923001234567") == {"project_type": "new_website"}
+
+
 def test_message_sid_cache_round_trip():
     payload = {"reply_text": "Hello", "qualification_status": "in_progress"}
     cache_turn_response("SM1234567890abcdef1234567890abcd", payload)
@@ -53,10 +58,10 @@ def test_begin_idempotent_turn_returns_cached_response_without_reprocessing():
 
 def test_in_memory_begin_turn_allows_single_processor():
     backend = InMemoryPersistenceBackend()
-    assert backend.begin_turn("SM1234567890abcdef1234567890abcd") is None
-    assert backend.begin_turn("SM1234567890abcdef1234567890abcd") is None
-    backend.set_turn_response("SM1234567890abcdef1234567890abcd", {"reply_text": "Done"})
-    assert backend.begin_turn("SM1234567890abcdef1234567890abcd") == {"reply_text": "Done"}
+    message_sid = "SM1234567890abcdef1234567890abcd"
+    assert backend.begin_turn(message_sid) is None
+    backend.set_turn_response(message_sid, {"reply_text": "Done"})
+    assert backend.begin_turn(message_sid) == {"reply_text": "Done"}
 
 
 @override_settings(PUBLIC_MEDIA_BASE_URL="https://media.example.com", BASE_WEBHOOK_URL="https://api.example.com")

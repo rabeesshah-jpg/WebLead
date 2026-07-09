@@ -82,6 +82,10 @@ def _parsed_request(payload: dict[str, Any]) -> dict[str, Any]:
         "button_type": validated["button_type"],
         "interactive_data": validated["interactive_data"],
         "channel_metadata": validated["channel_metadata"],
+        "call_sid": turn_request.call_sid,
+        "utterance_id": turn_request.utterance_id,
+        "is_final": turn_request.is_final,
+        "event_source": turn_request.event_source,
     }
 
 

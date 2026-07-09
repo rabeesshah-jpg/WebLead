@@ -18,6 +18,10 @@ class QualificationTurnRequest:
     message_sid: str | None
     media_url: str | None
     media_content_type: str | None
+    call_sid: str | None = None
+    utterance_id: str | None = None
+    is_final: bool = True
+    event_source: str | None = None
 
 
 def is_openrouter_timeout_error(exc: BaseException) -> bool:

@@ -11,7 +11,10 @@ from django.utils import timezone
 
 from apps.qualification.conversation_state import clear_conversations, get_accepted_fields, save_accepted_fields
 from apps.qualification.domain.language_selection import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
-from apps.qualification.domain.messages import get_language_changed_confirmation_message
+from apps.qualification.domain.messages import (
+    get_customer_message,
+    get_language_changed_confirmation_message,
+)
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, WhatsAppConversationSession
 from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
@@ -34,6 +37,13 @@ IN_PROGRESS_FIELDS = {
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
 }
+
+
+def _expect_language_change_reply(*, language: str, next_field: str) -> str:
+    return (
+        f"{get_language_changed_confirmation_message(language=language)}\n\n"
+        f"{get_customer_message(language=language, key=next_field)}"
+    )
 
 
 @pytest.fixture
@@ -174,8 +184,9 @@ def test_arabic_conversation_slash_language_set_en(
     assert session.awaiting_language_reselection is False
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
     assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == get_language_changed_confirmation_message(
+    assert body["reply_text"] == _expect_language_change_reply(
         language=LANGUAGE_ENGLISH,
+        next_field="referral_source",
     )
     assert body["conversation_language"] == LANGUAGE_ENGLISH
     assert body["language_command_action"] == "language_changed"
@@ -202,8 +213,9 @@ def test_english_conversation_slash_language_set_arabic(
     body = response.json()
     assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language == LANGUAGE_ARABIC
     assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == get_language_changed_confirmation_message(
+    assert body["reply_text"] == _expect_language_change_reply(
         language=LANGUAGE_ARABIC,
+        next_field="referral_source",
     )
     assert body["language_command_action"] == "language_changed"
     mock_extract.assert_not_called()
@@ -233,8 +245,9 @@ def test_button_after_slash_language_updates_language_and_preserves_progress(
     body = response.json()
     assert body["conversation_language"] == LANGUAGE_ARABIC
     assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == get_language_changed_confirmation_message(
+    assert body["reply_text"] == _expect_language_change_reply(
         language=LANGUAGE_ARABIC,
+        next_field="referral_source",
     )
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
     mock_send_picker.assert_called_once()
@@ -259,7 +272,10 @@ def test_lang_ar_button_from_english_returns_arabic_confirmation(mock_extract, m
     assert response.status_code == 200
     body = response.json()
     assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert body["reply_text"] == get_language_changed_confirmation_message(language=LANGUAGE_ARABIC)
+    assert body["reply_text"] == _expect_language_change_reply(
+        language=LANGUAGE_ARABIC,
+        next_field="referral_source",
+    )
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
     mock_send_picker.assert_not_called()
     mock_extract.assert_not_called()
@@ -283,7 +299,10 @@ def test_lang_en_button_from_arabic_returns_english_confirmation(mock_extract, m
     assert response.status_code == 200
     body = response.json()
     assert body["conversation_language"] == LANGUAGE_ENGLISH
-    assert body["reply_text"] == get_language_changed_confirmation_message(language=LANGUAGE_ENGLISH)
+    assert body["reply_text"] == _expect_language_change_reply(
+        language=LANGUAGE_ENGLISH,
+        next_field="referral_source",
+    )
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
     mock_send_picker.assert_not_called()
     mock_extract.assert_not_called()
@@ -344,7 +363,7 @@ def test_normal_message_mentioning_english_does_not_change_language(
     )
 
     assert response.status_code == 200
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
     assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language == LANGUAGE_ENGLISH
 
 

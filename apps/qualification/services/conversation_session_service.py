@@ -24,6 +24,8 @@ FRESH_SESSION_DEFAULTS: dict[str, object] = {
     "last_message_at": None,
     "human_handoff_requested_at": None,
     "booking_link_sent_at": None,
+    "onboarding_intro_sent": False,
+    "last_onboarding_intro_at": None,
 }
 
 
@@ -54,7 +56,8 @@ def get_or_create_conversation_session(
     )
     if created and session.language is None and get_accepted_fields(canonical_number):
         session.language = LANGUAGE_ENGLISH
-        session.save(update_fields=["language"])
+        session.onboarding_intro_sent = True
+        session.save(update_fields=["language", "onboarding_intro_sent"])
     return session, created
 
 
@@ -165,5 +168,36 @@ def mark_booking_link_sent(
         locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
         locked.booking_link_sent_at = current
         locked.save(update_fields=["booking_link_sent_at"])
+    session.refresh_from_db()
+    return session
+
+
+def mark_onboarding_intro_sent(
+    session: WhatsAppConversationSession,
+    *,
+    now=None,
+) -> WhatsAppConversationSession:
+    """Mark that an onboarding / welcome-back intro was delivered for this turn."""
+    current = now or timezone.now()
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.onboarding_intro_sent = True
+        locked.last_onboarding_intro_at = current
+        locked.save(update_fields=["onboarding_intro_sent", "last_onboarding_intro_at"])
+    session.refresh_from_db()
+    return session
+
+
+def reset_onboarding_intro_sent(
+    session: WhatsAppConversationSession,
+) -> WhatsAppConversationSession:
+    """Clear onboarding so the next inbound message shows the intro again."""
+    if not session.onboarding_intro_sent and session.last_onboarding_intro_at is None:
+        return session
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.onboarding_intro_sent = False
+        locked.last_onboarding_intro_at = None
+        locked.save(update_fields=["onboarding_intro_sent", "last_onboarding_intro_at"])
     session.refresh_from_db()
     return session

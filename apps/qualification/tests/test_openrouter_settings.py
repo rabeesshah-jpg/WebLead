@@ -14,6 +14,10 @@ def test_default_base_url():
     assert settings.OPENROUTER_BASE_URL == "https://openrouter.ai/api/v1"
 
 
+def test_default_completion_max_tokens_is_400():
+    assert settings.OPENROUTER_COMPLETION_MAX_TOKENS == 400
+
+
 def test_default_timeout_is_20():
     assert settings.OPENROUTER_TIMEOUT_SECONDS == 20
 

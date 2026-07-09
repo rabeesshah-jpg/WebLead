@@ -60,6 +60,9 @@ def _build_response(
         "call_id": payload["call_id"],
         "accepted_fields": accepted_fields,
         "qualification_status": "completed",
+        "spoken_text": booking_fields.get("spoken_text"),
+        "whatsapp_text": booking_fields.get("whatsapp_text"),
+        "actions": list(booking_fields.get("actions") or []),
         "send_booking_link": bool(booking_fields.get("send_booking_link")),
         "booking_link_sent": bool(booking_fields.get("booking_link_sent")),
         "booking_link": booking_fields.get("booking_link"),
@@ -92,6 +95,9 @@ class VoiceCallCompletedService:
             language = _conversation_language_for(whatsapp_number)
             booking_fields = build_booking_completion_reply(language=language)
             if booking_fields.get("booking_link"):
+                # Voice-call events deliver via Twilio; Extract uses reply_text only.
+                booking_fields["send_booking_link"] = True
+                booking_fields["booking_link_sent"] = False
                 try:
                     booking_fields["booking_link_sent"] = deliver_booking_link_whatsapp_text(
                         whatsapp_number=whatsapp_number,

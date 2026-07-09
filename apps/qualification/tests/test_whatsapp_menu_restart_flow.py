@@ -124,7 +124,7 @@ def test_menu_command_sends_interactive_menu(mock_send_menu: MagicMock, client):
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    response = _post_extract(client, _text_payload(message="menu", message_sid=MENU_MESSAGE_SID))
+    response = _post_extract(client, _text_payload(message="M", message_sid=MENU_MESSAGE_SID))
     body = response.json()
 
     assert response.status_code == 200
@@ -133,6 +133,69 @@ def test_menu_command_sends_interactive_menu(mock_send_menu: MagicMock, client):
     mock_send_menu.assert_called_once()
     session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
     assert session.last_menu_sent is True
+
+
+@override_settings(**MENU_SETTINGS)
+@patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
+@pytest.mark.parametrize("message", ["M", " M ", "\nM\n"])
+def test_exact_uppercase_m_opens_menu(mock_send_menu: MagicMock, client, message: str):
+    mock_send_menu.return_value = "SMmainmenusent0000000000000001"
+    _seed_session()
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
+
+    response = _post_extract(
+        client,
+        _text_payload(message=message, message_sid=MENU_MESSAGE_SID),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "awaiting_menu_selection"
+    assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
+    mock_send_menu.assert_called_once()
+
+
+@override_settings(**MENU_SETTINGS)
+@patch("apps.qualification.services.whatsapp_menu_service.send_whatsapp_menu")
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+@pytest.mark.parametrize(
+    "message",
+    ["m", "menu", "/menu", "i need your menu", "M please", "I want M"],
+)
+def test_non_exact_uppercase_m_does_not_open_menu(
+    mock_extract: MagicMock,
+    mock_send_menu: MagicMock,
+    client,
+    message: str,
+):
+    mock_extract.return_value = QualificationFieldFilterResult(
+        accepted_fields={},
+        rejected_fields=(),
+        human_handoff_requested=False,
+    )
+    _seed_session()
+    save_accepted_fields(
+        VALID_WHATSAPP_NUMBER,
+        {
+            "project_type": "new_website",
+            "requirements": "website",
+            "referral_source": "Google",
+        },
+    )
+
+    response = _post_extract(
+        client,
+        _text_payload(
+            message=message,
+            message_sid=NORMAL_QUAL_MESSAGE_SID,
+        ),
+    )
+
+    assert response.status_code == 200
+    mock_send_menu.assert_not_called()
+    body = response.json()
+    assert body.get("status") != "awaiting_menu_selection"
+    assert "reply_text" in body
 
 
 @override_settings(**MENU_SETTINGS)
@@ -160,7 +223,7 @@ def test_list_picker_restart_clears_state(mock_send_menu: MagicMock, client):
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    _post_extract(client, _text_payload(message="/menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea0"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea0"))
     response = _post_extract(
         client,
         _text_payload(
@@ -202,7 +265,7 @@ def test_list_picker_language_triggers_picker(
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    _post_extract(client, _text_payload(message="menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea2"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea2"))
     response = _post_extract(
         client,
         _text_payload(
@@ -229,7 +292,7 @@ def test_list_picker_human_triggers_handoff(mock_send_menu: MagicMock, client):
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    _post_extract(client, _text_payload(message="/menu", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea4"))
+    _post_extract(client, _text_payload(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea4"))
     response = _post_extract(
         client,
         _text_payload(
@@ -289,6 +352,7 @@ def test_existing_normal_qualification_still_works(mock_extract, client):
 
     assert response.status_code == 200
     assert body["accepted_fields"]["project_type"] == "new_website"
-    assert body["next_field"] == "requirements"
+    assert body["accepted_fields"]["requirements"] == "I need a new website for my bakery"
+    assert body["next_field"] == "referral_source"
     assert body["qualification_status"] == "in_progress"
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()

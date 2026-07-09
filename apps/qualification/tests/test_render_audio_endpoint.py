@@ -146,11 +146,12 @@ def test_invalid_internal_secret_is_rejected(mock_synthesize, client, media_root
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, PUBLIC_MEDIA_BASE_URL=PUBLIC_MEDIA_BASE_URL)
 @patch("apps.qualification.whatsapp_audio.synthesize_wav", return_value=SAMPLE_WAV)
-def test_blank_text_is_rejected(mock_synthesize, client, media_root):
+def test_blank_text_returns_skipped_empty_without_audio(mock_synthesize, client, media_root):
     response = _post_render(client, {"text": "   ", "request_id": "SM_TEST_003"})
 
-    assert response.status_code == 400
-    assert response.json() == {"error": "Invalid request."}
+    assert response.status_code == 200
+    assert response.json()["status"] == "skipped_empty"
+    assert response.json()["media_url"] is None
     mock_synthesize.assert_not_called()
 
 

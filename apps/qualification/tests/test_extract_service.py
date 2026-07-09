@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.qualification.conversation_state import clear_conversations
+from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.message_idempotency import cache_turn_response, clear_message_sid_cache
 from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
@@ -20,6 +21,46 @@ VALID_WHATSAPP_NUMBER = "+923001234567"
 TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 VOICE_TRANSCRIPT = "I need a website for my bakery"
+REFERRAL_QUESTION = "Thank you. How did you hear about us?"
+
+
+def _intro_prefixed_text(*, body: str) -> str:
+    intro = get_customer_message(language="en", key="onboarding_intro")
+    return f"{intro}\n\n{body}".strip()
+
+
+def _expected_turn_response(*, channel: str = "text") -> dict:
+    body = REFERRAL_QUESTION
+    text_reply = _intro_prefixed_text(body=body)
+    voice_intro = get_customer_message(language="en", key="onboarding_intro_voice")
+    if channel == "voice":
+        spoken = voice_intro
+        reply = spoken
+    else:
+        spoken = text_reply
+        reply = text_reply
+    payload = {
+        "accepted_fields": {
+            "project_type": "new_website",
+            "requirements": "website for a restaurant",
+        },
+        "rejected_fields": {"referral_source": "value_missing"},
+        "human_handoff_requested": False,
+        "next_field": "referral_source",
+        "reply_text": reply,
+        "qualification_status": "in_progress",
+        "conversation_language": "en",
+        "preferred_phone": None,
+        "reply_mode": "text",
+        "spoken_text": spoken,
+        "whatsapp_text": text_reply,
+        "actions": [],
+        "send_booking_link": False,
+        "booking_link_sent": False,
+        "booking_link": None,
+    }
+    return payload
+
 
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={
@@ -62,26 +103,6 @@ def _clear_idempotency_cache():
     WhatsAppConversationSession.objects.all().delete()
 
 
-def _expected_turn_response() -> dict:
-    return {
-        "accepted_fields": {
-            "project_type": "new_website",
-            "requirements": "website for a restaurant",
-        },
-        "rejected_fields": {"referral_source": "value_missing"},
-        "human_handoff_requested": False,
-        "next_field": "referral_source",
-        "reply_text": "Thank you. How did you hear about us?",
-        "qualification_status": "in_progress",
-        "conversation_language": "en",
-        "preferred_phone": None,
-        "reply_mode": "text",
-        "send_booking_link": False,
-        "booking_link_sent": False,
-        "booking_link": None,
-    }
-
-
 def test_extract_service_run_turn_returns_plain_dict_not_response():
     turn_handler = MagicMock(return_value={"accepted_fields": {}, "rejected_fields": {}})
     result = ExtractService(turn_handler=turn_handler).run_turn(TEXT_VALIDATED_DATA)
@@ -112,6 +133,7 @@ def test_text_input_does_not_call_transcription_service(mock_turn_handler):
         whatsapp_number=VALID_WHATSAPP_NUMBER,
         message=VALID_MESSAGE,
         message_sid=None,
+        for_voice=False,
     )
 
 
@@ -144,6 +166,7 @@ def test_voice_input_calls_transcription_service_once(mock_turn_handler):
         whatsapp_number=VALID_WHATSAPP_NUMBER,
         message=VOICE_TRANSCRIPT,
         message_sid=None,
+        for_voice=True,
     )
 
 
@@ -183,7 +206,7 @@ def test_voice_turn_returns_expected_payload_with_transcript(mock_turn_handler):
         turn_handler=mock_turn_handler,
     ).run_turn(VOICE_VALIDATED_DATA)
 
-    expected = _expected_turn_response()
+    expected = _expected_turn_response(channel="voice")
     expected["reply_mode"] = "voice"
     expected["transcript"] = VOICE_TRANSCRIPT
     assert result == expected

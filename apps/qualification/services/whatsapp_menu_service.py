@@ -36,6 +36,7 @@ from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.services.conversation_restart_service import restart_qualification_conversation
 from apps.qualification.services.conversation_session_service import (
     get_or_create_conversation_session,
+    mark_onboarding_intro_sent,
     mark_session_human_handoff_requested,
 )
 from apps.qualification.services.language_gate_service import (
@@ -296,8 +297,18 @@ class WhatsAppMenuService:
         *,
         transcript: str | None = None,
     ) -> WhatsAppMenuResult:
-        """Show the menu when the customer has been idle beyond the configured threshold."""
+        """
+        Show the menu only for explicit inactivity-timer jobs.
+
+        Normal ``whatsapp_text`` / ``whatsapp_voice_note`` inbound messages must
+        never auto-open the menu after idle; idle customers get welcome-back
+        re-intro via onboarding instead. Callers must pass
+        ``event_source == "inactivity_timer"``.
+        """
         if not is_lead_qualification_enabled():
+            return WhatsAppMenuResult(handled=False)
+
+        if validated_data.get("event_source") != "inactivity_timer":
             return WhatsAppMenuResult(handled=False)
 
         message = validated_data.get("message")
@@ -407,6 +418,7 @@ class WhatsAppMenuService:
             )
 
         mark_menu_pending(session=session, menu_id=MENU_INSTANCE_ID)
+        mark_onboarding_intro_sent(session)
         session.refresh_from_db()
 
         to_number = format_whatsapp_recipient_address(whatsapp_number)

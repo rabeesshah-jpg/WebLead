@@ -68,6 +68,12 @@ ALLOWED_REQUEST_FIELDS = frozenset(
         "button_payload",
         "button_text",
         "button_type",
+        "interactive_data",
+        "channel_metadata",
+        "call_sid",
+        "utterance_id",
+        "is_final",
+        "event_source",
     },
 )
 class InvalidExtractRequestError(ValueError):
@@ -203,6 +209,15 @@ def _parse_media_content_type(payload: dict[str, Any], *, required: bool) -> str
     return media_content_type
 
 
+def _parse_is_final(payload: dict[str, Any]) -> bool:
+    if "is_final" not in payload:
+        return True
+    is_final = payload["is_final"]
+    if not isinstance(is_final, bool):
+        raise InvalidExtractRequestError
+    return is_final
+
+
 def _parse_optional_message(payload: dict[str, Any]) -> str | None:
     if "message" not in payload:
         return None
@@ -243,6 +258,16 @@ def _parse_extract_request(raw_body: bytes) -> QualificationTurnRequest:
     message_sid = _parse_message_sid(payload)
     normalized_message = _parse_optional_message(payload)
     has_media_url = _has_voice_media_url(payload)
+    call_sid = _normalize_optional_string(payload.get("call_sid"))
+    utterance_id = _normalize_optional_string(payload.get("utterance_id"))
+    event_source = _normalize_optional_string(payload.get("event_source"))
+    is_final = _parse_is_final(payload)
+    voice_fields = {
+        "call_sid": call_sid,
+        "utterance_id": utterance_id,
+        "is_final": is_final,
+        "event_source": event_source,
+    }
 
     if input_channel == "whatsapp_text":
         if not normalized_message:
@@ -256,6 +281,7 @@ def _parse_extract_request(raw_body: bytes) -> QualificationTurnRequest:
             message_sid=message_sid,
             media_url=None,
             media_content_type=None,
+            **voice_fields,
         )
 
     media_url = _parse_media_url(payload, required=True)
@@ -275,6 +301,7 @@ def _parse_extract_request(raw_body: bytes) -> QualificationTurnRequest:
         message_sid=message_sid,
         media_url=media_url,
         media_content_type=media_content_type,
+        **voice_fields,
     )
 
 

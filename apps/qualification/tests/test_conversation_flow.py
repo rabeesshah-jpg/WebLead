@@ -12,7 +12,7 @@ from apps.qualification.conversation_flow import (
     normalize_confirmation_message,
 )
 from apps.qualification.domain.messages import get_customer_message
-from apps.qualification.conversation_state import clear_conversations
+from apps.qualification.conversation_state import clear_conversations, save_accepted_fields
 from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, RejectedQualificationField
@@ -22,7 +22,11 @@ pytestmark = pytest.mark.django_db
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
-COMPLETION_REPLY_TEXT = get_customer_message(language="en", key="completion")
+COMPLETION_REPLY_TEXT = get_customer_message(
+    language="en",
+    key="completion_with_booking_link",
+    booking_link=BOOKING_LINK,
+)
 
 
 def _filter_result(
@@ -69,58 +73,29 @@ def _reset_conversation_state():
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_first_message_with_website_requirement_asks_for_referral_source(mock_extract, client):
-    mock_extract.return_value = _filter_result(
-        accepted_fields={
-            "project_type": "new_website",
-            "requirements": "I need a new website for my restaurant",
-        },
-        rejected_fields=(
-            RejectedQualificationField(field_name="referral_source", reason="null value"),
-            RejectedQualificationField(field_name="whatsapp_confirmed", reason="null value"),
-            RejectedQualificationField(field_name="preferred_phone", reason="null value"),
-        ),
-    )
-
     response = _post(client, "I need a new website for my restaurant.")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["accepted_fields"] == {
-        "project_type": "new_website",
-        "requirements": "I need a new website for my restaurant",
-    }
+    assert body["accepted_fields"]["project_type"] == "new_website"
+    assert body["accepted_fields"]["requirements"] == "I need a new website for my restaurant."
+    assert body["accepted_fields"]["services_required"] == ["new_website"]
     assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == "Thank you. How did you hear about us?"
+    assert "How did you hear about us?" in body["reply_text"]
     assert body["qualification_status"] == "in_progress"
-    mock_extract.assert_called_once_with(
-        customer_message="I need a new website for my restaurant.",
-        known_whatsapp_number=WHATSAPP_NUMBER,
-        phone_confirmation_question_asked=False,
-        message_sid=None,
-        collected_fields={},
-        conversation_history=[],
-        conversation_language="en",
-    )
+    mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_referral_source_response_asks_for_whatsapp_confirmation(mock_extract, client):
-    mock_extract.side_effect = [
-        _filter_result(
-            accepted_fields={
-                "project_type": "new_website",
-                "requirements": "I need a new website for my restaurant",
-            },
+    mock_extract.return_value = _filter_result(
+        accepted_fields={"referral_source": "Facebook"},
+        rejected_fields=(
+            RejectedQualificationField(field_name="whatsapp_confirmed", reason="null value"),
+            RejectedQualificationField(field_name="preferred_phone", reason="null value"),
         ),
-        _filter_result(
-            accepted_fields={"referral_source": "Facebook"},
-            rejected_fields=(
-                RejectedQualificationField(field_name="whatsapp_confirmed", reason="null value"),
-                RejectedQualificationField(field_name="preferred_phone", reason="null value"),
-            ),
-        ),
-    ]
+    )
 
     first = _post(client, "I need a new website for my restaurant.")
     second = _post(client, "Facebook")
@@ -132,14 +107,15 @@ def test_referral_source_response_asks_for_whatsapp_confirmation(mock_extract, c
     assert body["next_field"] == "whatsapp_confirmed"
     assert body["reply_text"] == "Thank you. Is this WhatsApp number the best number to reach you?"
     assert body["qualification_status"] == "in_progress"
-    mock_extract.assert_any_call(
+    mock_extract.assert_called_once_with(
         customer_message="Facebook",
         known_whatsapp_number=WHATSAPP_NUMBER,
         phone_confirmation_question_asked=False,
         message_sid=None,
         collected_fields={
             "project_type": "new_website",
-            "requirements": "I need a new website for my restaurant",
+            "requirements": "I need a new website for my restaurant.",
+            "services_required": ["new_website"],
         },
         conversation_history=ANY,
         conversation_language="en",
@@ -147,17 +123,15 @@ def test_referral_source_response_asks_for_whatsapp_confirmation(mock_extract, c
 
 
 def _reach_whatsapp_confirmation_prompt(mock_extract, client) -> None:
-    mock_extract.side_effect = [
-        _filter_result(
-            accepted_fields={
-                "project_type": "new_website",
-                "requirements": "I need a new website for my restaurant",
-            },
-        ),
-        _filter_result(accepted_fields={"referral_source": "Facebook"}),
-    ]
-    _post(client, "I need a new website for my restaurant.")
-    _post(client, "Facebook")
+    """Seed fields so the next active question is WhatsApp confirmation."""
+    save_accepted_fields(
+        WHATSAPP_NUMBER,
+        {
+            "project_type": "new_website",
+            "requirements": "I need a new website for my restaurant",
+            "referral_source": "Facebook",
+        },
+    )
     mock_extract.reset_mock()
 
 
@@ -175,7 +149,7 @@ def test_customer_confirms_whatsapp_number_completes_qualification(mock_extract,
     assert body["qualification_status"] == "completed"
     assert body["next_field"] is None
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
-    assert body["send_booking_link"] is True
+    assert body["send_booking_link"] is False
     assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
     mock_extract.assert_not_called()
@@ -216,7 +190,9 @@ def test_whatsapp_confirmation_no_variants_ask_for_preferred_phone(
     assert body["qualification_status"] == "in_progress"
     assert body["accepted_fields"]["whatsapp_confirmed"] is False
     assert body["next_field"] == "preferred_phone"
-    assert body["reply_text"] == "Please share the best phone number to reach you."
+    assert body["reply_text"] == (
+        "No problem. Please share the best phone number to reach you."
+    )
     mock_extract.assert_not_called()
 
 
@@ -233,6 +209,49 @@ def test_whatsapp_confirmation_unclear_reply_reprompts_without_openrouter(mock_e
     assert "Please reply Yes" in body["reply_text"]
     assert body["accepted_fields"]["project_type"] == "new_website"
     assert body["accepted_fields"]["referral_source"] == "Facebook"
+    assert body["accepted_fields"]["requirements"] == "I need a new website for my restaurant"
+    mock_extract.assert_not_called()
+
+
+@override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_requirement_reply_during_whatsapp_confirmation_is_saved_then_yes_completes(
+    mock_extract,
+    client,
+):
+    _reach_whatsapp_confirmation_prompt(mock_extract, client)
+
+    first = _post(client, "I need a new website and automation")
+    first_body = first.json()
+    assert first.status_code == 200
+    assert first_body["qualification_status"] == "in_progress"
+    assert first_body["next_field"] == "whatsapp_confirmed"
+    assert first_body["accepted_fields"]["requirements"] == (
+        "I need a new website for my restaurant I need a new website and automation"
+    )
+    assert first_body["accepted_fields"]["services_required"] == [
+        "new_website",
+        "automation",
+    ]
+    assert "I've noted that" in first_body["reply_text"]
+    assert "best number to reach you" in first_body["reply_text"]
+    assert "Please reply Yes or No" in first_body["reply_text"]
+    assert "whatsapp_confirmed" not in first_body["accepted_fields"]
+    mock_extract.assert_not_called()
+
+    second = _post(client, "Yes")
+    second_body = second.json()
+    assert second.status_code == 200
+    assert second_body["accepted_fields"]["whatsapp_confirmed"] is True
+    assert second_body["accepted_fields"]["preferred_phone"] == WHATSAPP_NUMBER
+    assert second_body["qualification_status"] == "completed"
+    assert second_body["next_field"] is None
+    assert second_body["reply_text"] == COMPLETION_REPLY_TEXT
+    assert second_body["send_booking_link"] is False
+    assert second_body["booking_link_sent"] is True
+    assert second_body["booking_link"] == BOOKING_LINK
+    assert "I will send you a booking link" not in second_body["reply_text"]
+    assert BOOKING_LINK in second_body["reply_text"]
     mock_extract.assert_not_called()
 
 
@@ -249,7 +268,7 @@ def test_completed_state_retry_remains_completed_without_openrouter(mock_extract
     assert body["qualification_status"] == "completed"
     assert body["next_field"] is None
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
-    assert body["send_booking_link"] is True
+    assert body["send_booking_link"] is False
     assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
     mock_extract.assert_not_called()
@@ -259,19 +278,11 @@ def test_completed_state_retry_remains_completed_without_openrouter(mock_extract
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_customer_declines_and_gives_alternate_phone_completes_qualification(mock_extract, client):
     alternate_phone = "+923009999999"
-    mock_extract.side_effect = [
-        _filter_result(
-            accepted_fields={
-                "project_type": "new_website",
-                "requirements": "I need a new website for my restaurant",
-            },
-        ),
-        _filter_result(accepted_fields={"referral_source": "Facebook"}),
-        _filter_result(accepted_fields={"preferred_phone": alternate_phone}),
-    ]
+    mock_extract.return_value = _filter_result(
+        accepted_fields={"preferred_phone": alternate_phone},
+    )
 
-    _post(client, "I need a new website for my restaurant.")
-    _post(client, "Facebook")
+    _reach_whatsapp_confirmation_prompt(mock_extract, client)
     _post(client, "No")
     response = _post(client, f"Please contact me on {alternate_phone}")
 
@@ -281,11 +292,10 @@ def test_customer_declines_and_gives_alternate_phone_completes_qualification(moc
     assert body["preferred_phone"] == alternate_phone
     assert body["qualification_status"] == "completed"
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
-    assert body["send_booking_link"] is True
+    assert body["send_booking_link"] is False
     assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
-    assert mock_extract.call_count == 3
-    mock_extract.assert_any_call(
+    mock_extract.assert_called_once_with(
         customer_message=f"Please contact me on {alternate_phone}",
         known_whatsapp_number=WHATSAPP_NUMBER,
         phone_confirmation_question_asked=True,
@@ -299,21 +309,6 @@ def test_customer_declines_and_gives_alternate_phone_completes_qualification(moc
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_repeated_message_does_not_reset_saved_answers(mock_extract, client):
-    mock_extract.side_effect = [
-        _filter_result(
-            accepted_fields={
-                "project_type": "new_website",
-                "requirements": "I need a new website for my restaurant",
-            },
-        ),
-        _filter_result(
-            accepted_fields={
-                "project_type": "website_upgrade",
-                "requirements": "Different requirement",
-            },
-        ),
-    ]
-
     first = _post(client, "I need a new website for my restaurant.")
     second = _post(client, "I need a new website for my restaurant.")
 
@@ -321,7 +316,8 @@ def test_repeated_message_does_not_reset_saved_answers(mock_extract, client):
     assert second.status_code == 200
     body = second.json()
     assert body["accepted_fields"]["project_type"] == "new_website"
-    assert body["accepted_fields"]["requirements"] == "I need a new website for my restaurant"
+    assert body["accepted_fields"]["requirements"] == "I need a new website for my restaurant."
+    mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
@@ -347,9 +343,18 @@ def test_human_handoff_request_bypasses_normal_questions(mock_extract, client):
         ("Yes", "yes"),
         ("Yes it's best", "yes"),
         ("yep", "yes"),
+        ("yeah", "yes"),
+        ("confirm", "yes"),
+        ("confirmed", "yes"),
+        ("haan", "yes"),
+        ("han", "yes"),
+        ("ji", "yes"),
         ("No", "no"),
         ("No, use another number", "no"),
+        ("nahi", "no"),
+        ("nahin", "no"),
         ("maybe", "unclear"),
+        ("I need a new website", "unclear"),
     ],
 )
 def test_classify_whatsapp_confirmation_reply(message, expected):

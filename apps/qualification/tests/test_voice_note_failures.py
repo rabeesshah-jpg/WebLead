@@ -20,6 +20,7 @@ from apps.qualification.deepgram_client import (
     DeepgramTimeoutError,
 )
 from apps.qualification.message_idempotency import clear_message_sid_cache
+from apps.qualification.openrouter_client import OpenRouterConfigurationError
 from apps.qualification.persistence.cache_backend import reset_qualification_cache_backend_for_tests
 from apps.qualification.services.transcription_service import clear_transcription_media_cache
 from apps.qualification.tests.internal_api_test_helpers import (
@@ -39,9 +40,28 @@ from apps.qualification.twilio_media import (
     TwilioMediaTimeoutError,
     TwilioMediaUnauthorizedError,
 )
+from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.voice_note_config import get_voice_note_config_report
 
+pytestmark = pytest.mark.django_db
+
 EXTRACT_ENDPOINT = "/api/internal/qualification/extract/"
+VOICE_WHATSAPP_NUMBER = "+923246271149"
+
+
+@pytest.fixture(autouse=True)
+def _voice_note_english_session():
+    from django.utils import timezone
+
+    WhatsAppConversationSession.objects.update_or_create(
+        whatsapp_number=VOICE_WHATSAPP_NUMBER,
+        defaults={
+            "language": "en",
+            "language_selected_at": timezone.now(),
+        },
+    )
+    yield
+    WhatsAppConversationSession.objects.filter(whatsapp_number=VOICE_WHATSAPP_NUMBER).delete()
 
 
 @pytest.fixture(autouse=True)
@@ -315,14 +335,25 @@ def test_twilio_media_download_enforces_size_limit(mock_urlopen):
     OPENROUTER_API_KEY="",
     OPENROUTER_MODEL="test/model",
 )
+@patch(
+    "apps.qualification.qualification_turn.try_handle_rich_inbound_qualification_turn",
+    return_value=None,
+)
+@patch(
+    "apps.qualification.qualification_turn.extract_qualification_from_openrouter",
+    side_effect=OpenRouterConfigurationError("OpenRouter API key is not configured"),
+)
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
 @patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 def test_openrouter_missing_after_successful_transcription_logs_failure_type(
     mock_download,
     mock_transcribe,
+    mock_extract,
+    mock_rich,
     client,
     caplog,
 ):
+    """Force OpenRouter path after transcription (bypass rich inbound)."""
     clear_message_sid_cache()
     with caplog.at_level(logging.ERROR, logger="apps.qualification"):
         response = _post_voice(
@@ -333,6 +364,8 @@ def test_openrouter_missing_after_successful_transcription_logs_failure_type(
     assert response.status_code == 503
     assert response.json() == {"error": "Qualification service is unavailable."}
     assert "QualificationServiceUnavailableError:OpenRouterConfigurationError" in caplog.text
+    mock_extract.assert_called_once()
+    mock_rich.assert_called_once()
 
 
 @override_settings(

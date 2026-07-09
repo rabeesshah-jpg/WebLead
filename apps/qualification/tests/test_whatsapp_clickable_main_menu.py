@@ -127,7 +127,7 @@ def test_menu_command_sends_twilio_content_sid_instead_of_plain_text(mock_send_m
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
-    response = _post_extract(client, _text_payload(message="menu", message_sid=SID_MENU_SHOW))
+    response = _post_extract(client, _text_payload(message="M", message_sid=SID_MENU_SHOW))
     body = response.json()
 
     assert response.status_code == 200
@@ -220,7 +220,7 @@ def test_unknown_payload_resends_menu(
     _seed_session()
     save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
 
-    _post_extract(client, _text_payload(message="menu", message_sid=SID_UNKNOWN_MENU))
+    _post_extract(client, _text_payload(message="M", message_sid=SID_UNKNOWN_MENU))
     response = _post_extract(
         client,
         _text_payload(
@@ -283,7 +283,7 @@ def test_feature_flag_disabled_skips_menu_and_uses_normal_flow(
 
     response = _post_extract(
         client,
-        _text_payload(message="menu", message_sid=SID_FEATURE_FLAG_OFF),
+        _text_payload(message="M", message_sid=SID_FEATURE_FLAG_OFF),
     )
     body = response.json()
 

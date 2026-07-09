@@ -26,14 +26,6 @@ class ResolvedMenuAction:
     source: Literal["button", "text"] = "text"
 
 
-_MENU_COMMANDS: frozenset[str] = frozenset(
-    {
-        "menu",
-        "/menu",
-        "start",
-        "/start",
-    }
-)
 _RESTART_COMMANDS: frozenset[str] = frozenset(
     {
         "restart",
@@ -48,22 +40,33 @@ def _normalize_command_text(value: str | None) -> str:
     return " ".join(value.strip().split())
 
 
+def is_menu_command(user_message: str | None) -> bool:
+    """
+    Return True only when the full message is exactly uppercase ``M``.
+
+    Case-sensitive exact match after whitespace trim. No lowercasing and no
+    substring matching — ``m``, ``menu``, ``/menu``, and sentences containing
+    those tokens must not open the menu.
+    """
+    return (user_message or "").strip() == "M"
+
+
 def parse_whatsapp_menu_command(value: str | None) -> MenuCommandAction | None:
     """
     Parse explicit menu or restart commands.
 
-    ``restart`` and ``/restart`` restart immediately. ``menu``, ``/menu``,
-    ``start``, and ``/start`` trigger the interactive list-picker menu.
+    Menu opens only for exact trimmed ``M`` (case-sensitive).
+    ``restart`` and ``/restart`` restart immediately (case-insensitive).
     """
+    if is_menu_command(value):
+        return "show_menu"
+
     normalized = _normalize_command_text(value)
     if not normalized:
         return None
 
-    lowered = normalized.casefold()
-    if lowered in _RESTART_COMMANDS:
+    if normalized.lower() in _RESTART_COMMANDS:
         return "restart"
-    if lowered in _MENU_COMMANDS:
-        return "show_menu"
     return None
 
 
@@ -110,11 +113,7 @@ def resolve_menu_action(
                     source="button",
                 )
 
-    normalized_message = _normalize_command_text(message)
-    if not normalized_message:
-        return None
-
-    menu_command = parse_whatsapp_menu_command(normalized_message)
+    menu_command = parse_whatsapp_menu_command(message)
     if menu_command is not None:
         return ResolvedMenuAction(kind="command", command=menu_command, source="text")
 

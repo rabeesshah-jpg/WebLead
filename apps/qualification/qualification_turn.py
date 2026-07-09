@@ -8,6 +8,7 @@ from apps.qualification.conversation_flow import (
     is_qualification_complete,
     should_ask_phone_confirmation,
     try_handle_preferred_phone_turn,
+    try_handle_rich_inbound_qualification_turn,
     try_handle_whatsapp_confirmation_turn,
 )
 from apps.qualification.conversation_state import (
@@ -23,6 +24,7 @@ from apps.qualification.domain.extract_errors import (
     http_status_from_cause,
 )
 from apps.qualification.domain.language import get_conversation_language
+from apps.qualification.domain.llm_parse_fallback import build_llm_parse_failure_response
 from apps.qualification.extractor import ExtractionParseError
 from apps.qualification.openrouter_client import (
     OpenRouterConfigurationError,
@@ -80,6 +82,7 @@ def handle_qualification_turn(
     whatsapp_number: str,
     message: str,
     message_sid: str | None = None,
+    for_voice: bool = False,
 ) -> dict:
     """Run one qualification turn using the shared conversation flow."""
     persisted_fields = get_accepted_fields(whatsapp_number)
@@ -101,6 +104,7 @@ def handle_qualification_turn(
         whatsapp_number=whatsapp_number,
         message=message,
         language=conversation_language,
+        for_voice=for_voice,
     )
     if confirmation_response is not None:
         _record_conversation_turn(
@@ -122,6 +126,19 @@ def handle_qualification_turn(
             response=preferred_phone_response,
         )
         return preferred_phone_response
+
+    rich_inbound_response = try_handle_rich_inbound_qualification_turn(
+        whatsapp_number=whatsapp_number,
+        message=message,
+        language=conversation_language,
+    )
+    if rich_inbound_response is not None:
+        _record_conversation_turn(
+            whatsapp_number=whatsapp_number,
+            message=message,
+            response=rich_inbound_response,
+        )
+        return rich_inbound_response
 
     phone_confirmation_question_asked = should_ask_phone_confirmation(persisted_fields)
     conversation_history = get_recent_conversation_history(whatsapp_number)
@@ -156,12 +173,17 @@ def handle_qualification_turn(
             message_sid=message_sid,
             details="OpenRouter response is unusable",
         )
-    except ExtractionParseError as exc:
-        _raise_llm_request_failure(
-            exc=exc,
-            message_sid=message_sid,
-            details="Extraction response JSON is invalid",
+    except ExtractionParseError:
+        response = build_llm_parse_failure_response(
+            whatsapp_number=whatsapp_number,
+            language=conversation_language,
         )
+        _record_conversation_turn(
+            whatsapp_number=whatsapp_number,
+            message=message,
+            response=response,
+        )
+        return response
 
     response = build_turn_response(
         whatsapp_number=whatsapp_number,

@@ -29,6 +29,11 @@ VALID_WHATSAPP_NUMBER = "+923001234567"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 ARABIC_FIRST_QUESTION = "ما نوع الموقع الإلكتروني الذي تحتاجه؟"
 
+
+def _with_onboarding_intro(*, language: str, question: str) -> str:
+    intro = get_customer_message(language=language, key="onboarding_intro")
+    return f"{intro}\n\n{question}"
+
 LANGUAGE_PICKER_SETTINGS = {
     "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
     "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
@@ -98,7 +103,10 @@ def test_lang_ar_starts_with_arabic_first_question(mock_extract, mock_send_picke
 
     body = response.json()
     assert response.status_code == 200
-    assert body["reply_text"] == ARABIC_FIRST_QUESTION
+    assert body["reply_text"] == _with_onboarding_intro(
+        language=LANGUAGE_ARABIC,
+        question=ARABIC_FIRST_QUESTION,
+    )
     assert body["conversation_language"] == LANGUAGE_ARABIC
     mock_extract.assert_not_called()
     mock_send_picker.assert_not_called()
@@ -115,7 +123,10 @@ def test_lang_en_starts_with_existing_english_first_question(mock_extract, mock_
 
     body = response.json()
     assert response.status_code == 200
-    assert body["reply_text"] == QUESTIONS["project_type"]
+    assert body["reply_text"] == _with_onboarding_intro(
+        language=LANGUAGE_ENGLISH,
+        question=QUESTIONS["project_type"],
+    )
     assert body["conversation_language"] == LANGUAGE_ENGLISH
     mock_extract.assert_not_called()
 
@@ -159,8 +170,8 @@ def test_english_qualification_turn_includes_conversation_language(mock_extract,
     body = response.json()
     assert response.status_code == 200
     assert body["conversation_language"] == LANGUAGE_ENGLISH
-    assert body["reply_text"] == QUESTIONS["requirements"]
-    assert mock_extract.call_args.kwargs["conversation_language"] == LANGUAGE_ENGLISH
+    assert "Thank you, I've noted that." in body["reply_text"]
+    mock_extract.assert_not_called()
 
 
 def test_openrouter_system_prompt_includes_arabic_instructions_for_arabic_sessions():
@@ -323,6 +334,7 @@ def test_arabic_completion_response_is_arabic(mock_extract, mock_send_picker, cl
     assert body["conversation_language"] == LANGUAGE_ARABIC
     assert body["reply_text"] == get_customer_message(
         language=LANGUAGE_ARABIC,
-        key="completion",
+        key="completion_with_booking_link",
+        booking_link=LANGUAGE_PICKER_SETTINGS["BOOKING_LINK"],
     )
     mock_extract.assert_not_called()

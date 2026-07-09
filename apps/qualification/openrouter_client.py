@@ -62,6 +62,7 @@ def extract_qualification_from_openrouter(
         customer_message=customer_message,
         known_whatsapp_number=known_whatsapp_number,
         phone_confirmation_question_asked=phone_confirmation_question_asked,
+        message_sid=message_sid,
     )
 
 

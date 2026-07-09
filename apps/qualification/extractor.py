@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
+from apps.qualification.domain.llm_json_repair import (
+    build_llm_json_parse_candidates,
+    safe_raw_response_prefix,
+)
 from apps.qualification.models import ExtractionConfidence, QualificationExtraction
 from apps.qualification.schema import CONFIDENCE_FIELD_NAMES, QUALIFICATION_FIELD_NAMES
 
 from apps.qualification.domain.validators import E164_PHONE_PATTERN, is_valid_e164_phone_number
+
+logger = logging.getLogger("apps.qualification")
 
 _ROOT_FIELD_NAMES = frozenset(
     {
@@ -43,8 +50,10 @@ def _parse_non_empty_optional_str(value: Any, field: str) -> str | None:
 def _parse_project_type(value: Any) -> str | None:
     if value is None:
         return None
-    if value not in ("new_website", "website_upgrade"):
-        raise ExtractionParseError("project_type must be new_website, website_upgrade, or null")
+    if value not in ("new_website", "website_upgrade", "new_and_upgrade"):
+        raise ExtractionParseError(
+            "project_type must be new_website, website_upgrade, new_and_upgrade, or null"
+        )
     return value
 
 
@@ -163,14 +172,59 @@ def parse_extraction_payload(payload: dict[str, Any]) -> QualificationExtraction
     )
 
 
-def parse_extraction_json(raw_json: str) -> QualificationExtraction:
+def _log_llm_parse_event(*, event_name: str, **context: Any) -> None:
+    payload = {"event": event_name, **context}
+    logger.info(json.dumps(payload, separators=(",", ":")))
+
+
+def parse_extraction_json(
+    raw_json: str,
+    *,
+    message_sid: str | None = None,
+) -> QualificationExtraction:
     """Parse and validate raw JSON text from a model extraction response."""
-    try:
-        parsed = json.loads(raw_json)
-    except json.JSONDecodeError as exc:
-        raise ExtractionParseError("Invalid JSON in extraction response") from exc
+    raw_response_length = len(raw_json)
+    raw_response_prefix = safe_raw_response_prefix(raw_json)
+    candidates = build_llm_json_parse_candidates(raw_json)
+    parse_repair_attempted = len(candidates) > 1 or candidates[0] != raw_json.strip()
 
-    if not isinstance(parsed, dict):
-        raise ExtractionParseError("Extraction response must be a JSON object")
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if not isinstance(parsed, dict):
+            last_error = ExtractionParseError("Extraction response must be a JSON object")
+            continue
+        try:
+            result = parse_extraction_payload(parsed)
+        except ExtractionParseError as exc:
+            last_error = exc
+            continue
+        if parse_repair_attempted:
+            _log_llm_parse_event(
+                event_name="llm_extraction_parse_repaired",
+                message_sid=message_sid,
+                raw_response_prefix=raw_response_prefix,
+                raw_response_length=raw_response_length,
+                parse_repair_attempted=True,
+                parse_repair_success=True,
+                llm_parse_failed=False,
+            )
+        return result
 
-    return parse_extraction_payload(parsed)
+    _log_llm_parse_event(
+        event_name="llm_extraction_parse_failed",
+        message_sid=message_sid,
+        raw_response_prefix=raw_response_prefix,
+        raw_response_length=raw_response_length,
+        parse_repair_attempted=parse_repair_attempted,
+        parse_repair_success=False,
+        llm_parse_failed=True,
+        error_type=type(last_error).__name__ if last_error else "ExtractionParseError",
+    )
+    if isinstance(last_error, ExtractionParseError):
+        raise last_error
+    raise ExtractionParseError("Invalid JSON in extraction response") from last_error

@@ -157,7 +157,7 @@ def test_body_only_language_token_triggers_language_flow(
     _post_extract(
         client,
         {
-            "message": "menu",
+            "message": "M",
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
             "message_sid": "SM0menu000000000000000000000001",
