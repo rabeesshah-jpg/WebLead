@@ -16,7 +16,11 @@ from apps.qualification.domain.tts_safety import (
 )
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.services.extract_service import ExtractService
-from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
+from apps.qualification.tests.internal_api_test_helpers import (
+    API_SECRET,
+    MOCK_VOICE_AUDIO_DOWNLOAD,
+    internal_api_auth_headers,
+)
 from apps.qualification.voice_turn_idempotency import (
     begin_voice_utterance_turn,
     cache_voice_utterance_response,
@@ -31,7 +35,7 @@ CALL_SID = "CAabcdefghijklmnopqrstuvwxyz012345"
 SPOKEN_COMPLETION = get_customer_message(language="en", key="completion_spoken")
 WHATSAPP_BOOKING = get_customer_message(
     language="en",
-    key="completion_whatsapp_booking_link",
+    key="completion_with_booking_link",
     booking_link=BOOKING_LINK,
 )
 
@@ -67,7 +71,7 @@ def test_url_sanitizer_replaces_booking_url_before_tts():
     )
     assert BOOKING_LINK not in spoken
     assert spoken_text_contains_url(spoken) is False
-    assert "I'll send the link to your WhatsApp now." == spoken
+    assert "booking link above" in spoken.lower()
 
 
 def test_partial_transcript_is_ignored(client: Client):
@@ -158,11 +162,21 @@ def test_debounce_ignores_same_transcript_without_utterance_id():
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
+@patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value="Yes")
+@patch(
+    "apps.qualification.core.legacy_compat.download_twilio_media",
+    return_value=MOCK_VOICE_AUDIO_DOWNLOAD,
+)
 @patch(
     "apps.qualification.services.booking_link_delivery_service.send_booking_link_whatsapp_text",
     return_value="SMbooked",
 )
-def test_voice_booking_complete_spoken_has_no_url(mock_send: MagicMock, client: Client):
+def test_voice_booking_complete_spoken_has_no_url(
+    mock_send: MagicMock,
+    mock_download,
+    mock_transcribe,
+    client: Client,
+):
     save_accepted_fields(
         WHATSAPP_NUMBER,
         {
@@ -190,14 +204,17 @@ def test_voice_booking_complete_spoken_has_no_url(mock_send: MagicMock, client: 
     body = response.json()
     assert body["qualification_status"] == "completed"
     assert body["spoken_text"] == SPOKEN_COMPLETION
-    assert body["reply_text"] == SPOKEN_COMPLETION
+    assert body["reply_text"] == WHATSAPP_BOOKING
+    assert BOOKING_LINK in body["reply_text"]
     assert BOOKING_LINK not in body["spoken_text"]
     assert body["whatsapp_text"] == WHATSAPP_BOOKING
     assert BOOKING_LINK in body["whatsapp_text"]
     assert body["send_booking_link"] is True
     assert body["booking_link_sent"] is True
+    assert body["should_send_text"] is True
+    assert body["should_send_audio"] is True
     assert body["tts_enqueued"] is True
-    mock_send.assert_called_once()
+    mock_send.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
@@ -213,7 +230,7 @@ def test_irrelevant_message_redirects_politely(client: Client):
     )
     body = response.json()
     assert "few basic project details" in body["reply_text"]
-    assert "new website or an upgrade" in body["reply_text"]
+    assert "new website" in body["reply_text"]
     assert body["next_field"] == "project_type"
 
 

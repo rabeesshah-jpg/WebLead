@@ -24,7 +24,7 @@ def build_booking_link_message_body(
         return None
     return get_customer_message(
         language=language,
-        key="completion_whatsapp_booking_link",
+        key="completion_with_booking_link",
         booking_link=link,
     )
 
@@ -50,17 +50,12 @@ def build_booking_completion_reply(
         spoken_text = sanitize_spoken_text_for_tts(
             get_customer_message(language=language, key="completion_spoken"),
         )
-        whatsapp_text = get_customer_message(
-            language=language,
-            key="completion_whatsapp_booking_link",
-            booking_link=link,
-        )
-        # Combined text reply for WhatsApp text channel (single message with URL).
         text_reply = get_customer_message(
             language=language,
             key="completion_with_booking_link",
             booking_link=link,
         )
+        whatsapp_text = text_reply
         return {
             "spoken_text": spoken_text,
             "whatsapp_text": whatsapp_text,

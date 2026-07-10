@@ -27,6 +27,9 @@ from apps.qualification.domain.extract_errors import (
 )
 from apps.qualification.domain.language import get_conversation_language
 from apps.qualification.domain.llm_parse_fallback import build_llm_parse_failure_response
+from apps.qualification.domain.voice_note_responses import (
+    build_voice_transcription_unclear_response,
+)
 from apps.qualification.extractor import ExtractionParseError
 from apps.qualification.openrouter_client import (
     OpenRouterConfigurationError,
@@ -79,6 +82,22 @@ def _raise_llm_request_failure(
     raise ExtractStepFailure(info, cause=exc) from exc
 
 
+def run_qualification_turn(
+    *,
+    whatsapp_number: str,
+    message: str,
+    message_sid: str | None = None,
+    for_voice: bool = False,
+) -> dict:
+    """Run one shared qualification turn for text and transcribed voice input."""
+    return handle_qualification_turn(
+        whatsapp_number=whatsapp_number,
+        message=message,
+        message_sid=message_sid,
+        for_voice=for_voice,
+    )
+
+
 def handle_qualification_turn(
     *,
     whatsapp_number: str,
@@ -87,6 +106,20 @@ def handle_qualification_turn(
     for_voice: bool = False,
 ) -> dict:
     """Run one qualification turn using the shared conversation flow."""
+    normalized_message = " ".join((message or "").split())
+    if for_voice and not normalized_message:
+        conversation_language = get_conversation_language(whatsapp_number)
+        response = build_voice_transcription_unclear_response(
+            whatsapp_number=whatsapp_number,
+            language=conversation_language,
+        )
+        _record_conversation_turn(
+            whatsapp_number=whatsapp_number,
+            message=message or "",
+            response=response,
+        )
+        return response
+
     persisted_fields = get_accepted_fields(whatsapp_number)
     conversation_language = get_conversation_language(whatsapp_number)
 

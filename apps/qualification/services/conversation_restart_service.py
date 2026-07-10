@@ -24,23 +24,6 @@ def _clear_qualification_progress(
     clear_session_human_handoff_requested(session=session)
 
 
-def reset_qualification_progress_after_inactivity(
-    *,
-    whatsapp_number: str,
-    session: WhatsAppConversationSession,
-) -> None:
-    """
-    Clear stale qualification progress after a long idle gap.
-
-    Preserves the WhatsApp session row and selected language. Resets onboarding
-    so the next inbound message can deliver the first-contact intro again. Does
-    not clear MessageSid idempotency entries for the current or prior messages.
-    """
-    _clear_qualification_progress(whatsapp_number=whatsapp_number, session=session)
-    reset_onboarding_intro_sent(session)
-    session.refresh_from_db()
-
-
 def restart_qualification_conversation(
     *,
     whatsapp_number: str,
@@ -56,3 +39,20 @@ def restart_qualification_conversation(
     _clear_qualification_progress(whatsapp_number=whatsapp_number, session=session)
     reset_onboarding_intro_sent(session)
     session.refresh_from_db()
+
+
+def reset_qualification_progress_after_inactivity(
+    *,
+    whatsapp_number: str,
+    session: WhatsAppConversationSession,
+) -> None:
+    """
+    Reset qualification progress when a customer returns after idle timeout.
+
+    Clears accepted fields, booking-link delivery flags, and onboarding state
+    while preserving language and the WhatsApp session row.
+    """
+    restart_qualification_conversation(
+        whatsapp_number=whatsapp_number,
+        session=session,
+    )

@@ -30,6 +30,10 @@ _RESTART_COMMANDS: frozenset[str] = frozenset(
     {
         "restart",
         "/restart",
+        "start over",
+        "new inquiry",
+        "begin again",
+        "reset",
     }
 )
 
@@ -56,7 +60,8 @@ def parse_whatsapp_menu_command(value: str | None) -> MenuCommandAction | None:
     Parse explicit menu or restart commands.
 
     Menu opens only for exact trimmed ``M`` (case-sensitive).
-    ``restart`` and ``/restart`` restart immediately (case-insensitive).
+    ``restart``, ``/restart``, ``start over``, ``new inquiry``, ``begin again``, and
+    ``reset`` restart immediately (case-insensitive).
     """
     if is_menu_command(value):
         return "show_menu"

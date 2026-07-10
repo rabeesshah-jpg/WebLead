@@ -110,7 +110,7 @@ def test_extract_service_run_turn_returns_plain_dict_not_response():
     assert not hasattr(result, "status_code")
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_text_input_does_not_call_transcription_service(mock_turn_handler):
     mock_turn_handler.return_value = {
         "accepted_fields": {},
@@ -137,7 +137,7 @@ def test_text_input_does_not_call_transcription_service(mock_turn_handler):
     )
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_voice_input_calls_transcription_service_once(mock_turn_handler):
     transcription_service = MagicMock()
     transcription_service.transcribe.return_value = VOICE_TRANSCRIPT
@@ -170,7 +170,7 @@ def test_voice_input_calls_transcription_service_once(mock_turn_handler):
     )
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_text_turn_returns_expected_payload(mock_turn_handler):
     mock_turn_handler.return_value = {
         "accepted_fields": SAMPLE_FILTER_RESULT.accepted_fields,
@@ -187,7 +187,7 @@ def test_text_turn_returns_expected_payload(mock_turn_handler):
     assert result == _expected_turn_response()
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_voice_turn_returns_expected_payload_with_transcript(mock_turn_handler):
     mock_turn_handler.return_value = {
         "accepted_fields": SAMPLE_FILTER_RESULT.accepted_fields,
@@ -212,7 +212,7 @@ def test_voice_turn_returns_expected_payload_with_transcript(mock_turn_handler):
     assert result == expected
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_duplicate_message_sid_returns_cached_payload_without_second_turn(mock_turn_handler):
     mock_turn_handler.return_value = {
         "accepted_fields": SAMPLE_FILTER_RESULT.accepted_fields,
@@ -233,7 +233,7 @@ def test_duplicate_message_sid_returns_cached_payload_without_second_turn(mock_t
     mock_turn_handler.assert_called_once()
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_cached_message_sid_short_circuits_before_transcription(mock_turn_handler):
     cached_payload = _expected_turn_response()
     cache_turn_response(MESSAGE_SID, cached_payload)
@@ -249,7 +249,7 @@ def test_cached_message_sid_short_circuits_before_transcription(mock_turn_handle
     mock_turn_handler.assert_not_called()
 
 
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_service_exceptions_propagate(mock_turn_handler):
     mock_turn_handler.side_effect = QualificationServiceRequestError()
 

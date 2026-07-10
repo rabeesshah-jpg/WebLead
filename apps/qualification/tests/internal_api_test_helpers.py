@@ -38,6 +38,13 @@ EXTRACT_SUCCESS_FIELD_NAMES = frozenset(
         "send_booking_link",
         "booking_link_sent",
         "booking_link",
+        "should_send_text",
+        "should_send_audio",
+        "contains_booking_link",
+        "text_fallback_reply",
+        "idle_reset_triggered",
+        "inactivity_gap_seconds",
+        "conversation_state",
         # Rich inbound / turn metadata (present when classification runs).
         "classification",
         "saved_services",

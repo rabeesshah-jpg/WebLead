@@ -159,7 +159,7 @@ def test_extract_openrouter_configuration_failure_maps_to_503_contract(mock_extr
 
 
 @patch(
-    "apps.qualification.services.extract_service.handle_qualification_turn",
+    "apps.qualification.services.extract_service.run_qualification_turn",
     side_effect=QualificationServiceRequestError(),
 )
 def test_extract_service_request_failure_maps_to_502_contract(mock_turn, client):

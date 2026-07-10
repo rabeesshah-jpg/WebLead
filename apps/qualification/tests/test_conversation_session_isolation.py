@@ -327,7 +327,7 @@ def test_existing_user_continues_while_new_user_starts_fresh():
 
 
 @pytest.mark.language_gate
-@patch("apps.qualification.services.extract_service.handle_qualification_turn")
+@patch("apps.qualification.services.extract_service.run_qualification_turn")
 def test_voice_and_text_inputs_share_session_for_same_number(mock_turn_handler):
     mock_turn_handler.return_value = {
         "accepted_fields": {"project_type": "new_website"},

@@ -75,3 +75,18 @@ def test_non_exact_uppercase_m_does_not_open_menu(message: str):
     assert is_menu_command(message) is False
     assert parse_whatsapp_menu_command(message) is None
     assert resolve_menu_action(message=message) is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "restart",
+        "/restart",
+        "start over",
+        "new inquiry",
+        "begin again",
+        "reset",
+    ],
+)
+def test_restart_commands_are_recognized(message: str):
+    assert parse_whatsapp_menu_command(message) == "restart"

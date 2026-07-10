@@ -29,10 +29,16 @@ def safe_failure_type(exc: BaseException) -> str:
 
 def log_qualification_event(event_name: str, *, level: int = logging.INFO, **context: Any) -> None:
     """Emit one qualification log event using the project's existing logger and JSON shape."""
-    payload: dict[str, Any] = {"event": event_name, **context}
-    if "timestamp" not in payload:
-        payload["timestamp"] = timezone.now().isoformat()
-    logger.log(level, json.dumps(payload, separators=(",", ":")))
+    try:
+        payload: dict[str, Any] = {"event": event_name, **context}
+        if "timestamp" not in payload:
+            payload["timestamp"] = timezone.now().isoformat()
+        logger.log(level, json.dumps(payload, separators=(",", ":"), default=str))
+    except Exception:
+        logger.exception(
+            "qualification_log_event_failed",
+            extra={"event": event_name},
+        )
 
 
 def log_qualification_request_event(

@@ -79,7 +79,7 @@ def _reset_state():
 def test_booking_link_is_sent_once_after_qualification(mock_extract, client):
     body = _complete_qualification(client)
     assert body["reply_text"] == COMPLETION_REPLY_TEXT
-    assert body["send_booking_link"] is False
+    assert body["send_booking_link"] is True
     session = WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER)
     assert session.booking_link_sent_at is not None
     mock_extract.assert_not_called()

@@ -14,7 +14,10 @@ from apps.qualification.conversation_state import clear_conversations, save_acce
 from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.message_idempotency import cache_turn_response, clear_message_sid_cache
 from apps.qualification.models import QualificationFieldFilterResult, WhatsAppConversationSession
-from apps.qualification.services.booking_link_delivery_service import deliver_booking_link_whatsapp_text
+from apps.qualification.services.booking_link_delivery_service import (
+    deliver_booking_link_whatsapp_text,
+    send_booking_link_once,
+)
 from apps.qualification.tests.internal_api_test_helpers import (
     API_SECRET,
     MOCK_VOICE_AUDIO_DOWNLOAD,
@@ -38,7 +41,7 @@ VOICE_COMPLETION_SPOKEN = get_customer_message(
 )
 VOICE_COMPLETION_WHATSAPP = get_customer_message(
     language="en",
-    key="completion_whatsapp_booking_link",
+    key="completion_with_booking_link",
     booking_link=BOOKING_LINK,
 )
 
@@ -133,6 +136,81 @@ def test_deliver_booking_link_whatsapp_text_marks_session_once():
     assert session.booking_link_sent_at is not None
 
 
+def test_send_booking_link_once_blocks_duplicate_url():
+    session = WhatsAppConversationSession.objects.create(
+        whatsapp_number=WHATSAPP_NUMBER,
+        language="en",
+        booking_link_sent_at=timezone.now(),
+    )
+
+    result = send_booking_link_once(
+        session=session,
+        language="en",
+        input_channel="whatsapp_text",
+        user_message="How are you?",
+        whatsapp_number=WHATSAPP_NUMBER,
+    )
+
+    assert result["booking_link_sent"] is True
+    assert result["send_booking_link"] is False
+    assert result["contains_booking_url"] is False
+    assert BOOKING_LINK not in result["reply_text"]
+    assert "booking link above" in result["reply_text"]
+
+
+@override_settings(BOOKING_LINK=BOOKING_LINK)
+def test_send_booking_link_once_first_send_includes_url_once():
+    session = WhatsAppConversationSession.objects.create(
+        whatsapp_number=WHATSAPP_NUMBER,
+        language="en",
+    )
+
+    result = send_booking_link_once(
+        session=session,
+        language="en",
+        input_channel="whatsapp_voice_note",
+        user_message="Yes",
+        whatsapp_number=WHATSAPP_NUMBER,
+    )
+
+    assert result["send_booking_link"] is True
+    assert result["booking_link_sent"] is True
+    assert result["contains_booking_url"] is True
+    assert BOOKING_LINK in result["reply_text"]
+    assert BOOKING_LINK in result["whatsapp_text"]
+    assert BOOKING_LINK not in result["spoken_text"]
+    session.refresh_from_db()
+    assert session.booking_link_sent_at is not None
+
+
+@override_settings(BOOKING_LINK=BOOKING_LINK)
+def test_ensure_booking_link_delivery_preserves_inline_url():
+    from apps.qualification.services.booking_link_delivery_service import (
+        ensure_booking_link_delivery_on_response,
+    )
+
+    payload = {
+        "qualification_status": "completed",
+        "reply_text": TEXT_COMPLETION_WITH_LINK,
+        "whatsapp_text": TEXT_COMPLETION_WITH_LINK,
+        "spoken_text": VOICE_COMPLETION_SPOKEN,
+        "send_booking_link": True,
+        "booking_link_sent": True,
+        "booking_link": BOOKING_LINK,
+    }
+    updated = ensure_booking_link_delivery_on_response(
+        payload,
+        whatsapp_number=WHATSAPP_NUMBER,
+        message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceb4",
+        input_channel="whatsapp_voice_note",
+    )
+
+    assert updated["reply_text"] == TEXT_COMPLETION_WITH_LINK
+    assert BOOKING_LINK in updated["reply_text"]
+    assert updated["send_booking_link"] is True
+    assert updated["booking_link_sent"] is True
+
+
 def test_deliver_booking_link_whatsapp_text_logs_delivery_event(caplog):
     _seed_completed_qualification()
     sender = MagicMock(return_value="SMbookinglink0000000000000001")
@@ -218,7 +296,7 @@ def test_booking_link_sent_after_server_restart_clears_stale_session_flag(
     body = response.json()
 
     assert body["booking_link_sent"] is True
-    assert body["send_booking_link"] is False
+    assert body["send_booking_link"] is True
     assert body["reply_text"] == TEXT_COMPLETION_WITH_LINK
     assert BOOKING_LINK in body["reply_text"]
     mock_twilio_booking_link_send.assert_not_called()
@@ -244,7 +322,7 @@ def test_text_completion_puts_booking_link_in_single_reply_text(
     assert BOOKING_LINK in body["reply_text"]
     assert "I will send you a booking link" not in body["reply_text"]
     assert body["booking_link_sent"] is True
-    assert body["send_booking_link"] is False
+    assert body["send_booking_link"] is True
     mock_twilio_booking_link_send.assert_not_called()
     mock_extract.assert_not_called()
 
@@ -272,14 +350,15 @@ def test_voice_completion_puts_booking_link_in_single_reply_text(
 
     assert body["reply_mode"] == "voice"
     assert body["spoken_text"] == VOICE_COMPLETION_SPOKEN
-    assert body["reply_text"] == VOICE_COMPLETION_SPOKEN
+    assert body["reply_text"] == VOICE_COMPLETION_WHATSAPP
+    assert BOOKING_LINK in body["reply_text"]
     assert BOOKING_LINK not in body["spoken_text"]
     assert body["whatsapp_text"] == VOICE_COMPLETION_WHATSAPP
     assert BOOKING_LINK in body["whatsapp_text"]
     assert body["booking_link_sent"] is True
     assert body["send_booking_link"] is True
     assert body["booking_link"] == BOOKING_LINK
-    mock_twilio_booking_link_send.assert_called_once()
+    mock_twilio_booking_link_send.assert_not_called()
     mock_extract.assert_not_called()
 
 
@@ -366,7 +445,7 @@ def test_duplicate_completion_message_sid_does_not_resend_booking_link(
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json() == first.json()
-    assert first.json()["send_booking_link"] is False
+    assert first.json()["send_booking_link"] is True
     assert BOOKING_LINK in first.json()["reply_text"]
     mock_twilio_booking_link_send.assert_not_called()
     mock_extract.assert_not_called()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from typing import Any, Callable
 
 from django.utils import timezone
@@ -35,9 +36,13 @@ from apps.qualification.domain.logging_utils import (
     whatsapp_number_prefix,
 )
 from apps.qualification.domain.validators import normalize_whatsapp_session_number
-from apps.qualification.domain.onboarding import (
-    compute_inactivity_gap_seconds,
-    maybe_prepend_onboarding_intro,
+from apps.qualification.domain.onboarding import maybe_prepend_onboarding_intro
+from apps.qualification.domain.conversation_state_labels import (
+    resolve_conversation_state_label,
+)
+from apps.qualification.domain.session_idle_reset import (
+    compute_inactivity_gap_seconds_from_timestamps,
+    session_idle_reset_threshold_seconds,
     should_reset_qualification_after_inactivity,
 )
 from apps.qualification.message_idempotency import (
@@ -45,7 +50,12 @@ from apps.qualification.message_idempotency import (
     cache_turn_response,
     get_cached_turn_response,
 )
-from apps.qualification.qualification_turn import handle_qualification_turn
+from apps.qualification.api.logging import log_qualification_event
+from apps.qualification.domain.extract_errors import ExtractStepFailure
+from apps.qualification.domain.voice_note_responses import (
+    build_voice_transcription_unclear_response,
+)
+from apps.qualification.qualification_turn import run_qualification_turn
 from apps.qualification.services.booking_link_delivery_service import (
     ensure_booking_link_delivery_on_response,
     reconcile_stale_booking_link_sent_state,
@@ -82,13 +92,279 @@ class ExtractService:
         menu_service: WhatsAppMenuService | None = None,
     ) -> None:
         self._transcription_service = transcription_service or VoiceNoteTranscriptionService()
-        self._turn_handler = turn_handler or handle_qualification_turn
+        self._turn_handler = turn_handler or run_qualification_turn
         self._language_gate_service = language_gate_service or LanguageGateService()
         self._menu_service = menu_service or WhatsAppMenuService()
 
     def _touch_session_activity(self, whatsapp_number: str) -> None:
         session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
         touch_session_last_message_at(session)
+
+    def _maybe_apply_idle_reset_on_inbound(
+        self,
+        *,
+        session,
+        whatsapp_number: str,
+        previous_last_activity_at: datetime | None,
+        current_inbound_message_time: datetime,
+        input_channel: str,
+        message_sid: str | None,
+    ) -> tuple[bool, int | None]:
+        """
+        Reset qualification when the customer returns after the idle threshold.
+
+        Uses ``previous_last_activity_at`` before it is updated for this turn.
+        """
+        inactivity_gap_seconds = compute_inactivity_gap_seconds_from_timestamps(
+            previous_last_activity_at=previous_last_activity_at,
+            current_inbound_message_time=current_inbound_message_time,
+        )
+        threshold_seconds = session_idle_reset_threshold_seconds()
+        log_qualification_event(
+            "qualification_inactivity_gap_observed",
+            whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+            message_sid_prefix=message_sid_prefix(message_sid),
+            input_channel=input_channel,
+            previous_last_activity_at=(
+                previous_last_activity_at.isoformat()
+                if previous_last_activity_at is not None
+                else None
+            ),
+            current_inbound_message_time=current_inbound_message_time.isoformat(),
+            inactivity_gap_seconds=inactivity_gap_seconds,
+            session_idle_reset_seconds=threshold_seconds,
+            automatic_reset=False,
+        )
+        if not should_reset_qualification_after_inactivity(inactivity_gap_seconds):
+            return False, inactivity_gap_seconds
+
+        state_before_reset = dict(get_accepted_fields(whatsapp_number))
+        state_before_reset["booking_link_sent"] = session.booking_link_sent_at is not None
+        reset_qualification_progress_after_inactivity(
+            whatsapp_number=whatsapp_number,
+            session=session,
+        )
+        session.refresh_from_db()
+        log_qualification_event(
+            "qualification_idle_reset_triggered",
+            whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
+            message_sid_prefix=message_sid_prefix(message_sid),
+            input_channel=input_channel,
+            previous_last_activity_at=previous_last_activity_at.isoformat()
+            if previous_last_activity_at is not None
+            else None,
+            current_inbound_message_time=current_inbound_message_time.isoformat(),
+            inactivity_gap_seconds=inactivity_gap_seconds,
+            session_idle_reset_seconds=threshold_seconds,
+            idle_reset_triggered=True,
+            state_before_reset=state_before_reset,
+            state_after_reset={},
+            booking_link_sent_before=state_before_reset.get("booking_link_sent"),
+            booking_link_sent_after=False,
+        )
+        return True, inactivity_gap_seconds
+
+    def _attach_conversation_state(self, response_payload: dict[str, Any]) -> dict[str, Any]:
+        if response_payload.get("conversation_state"):
+            return response_payload
+        accepted_fields = response_payload.get("accepted_fields")
+        if not isinstance(accepted_fields, dict):
+            accepted_fields = {}
+        response_payload["conversation_state"] = resolve_conversation_state_label(
+            accepted_fields=accepted_fields,
+            next_field=response_payload.get("next_field"),
+            qualification_status=str(response_payload.get("qualification_status") or ""),
+            booking_link_sent=bool(response_payload.get("booking_link_sent")),
+        )
+        return response_payload
+
+    def _log_turn_completed(
+        self,
+        *,
+        input_channel: str,
+        response_payload: dict[str, Any],
+        state_before: dict[str, Any],
+        whatsapp_number: str,
+        transcript: str | None = None,
+        user_message: str | None = None,
+    ) -> None:
+        """Emit turn-completed diagnostics without risking turn failure on log serialization."""
+        try:
+            accepted_fields = response_payload.get("accepted_fields")
+            if not isinstance(accepted_fields, dict):
+                accepted_fields = {}
+            state_after = get_accepted_fields(whatsapp_number)
+            if not isinstance(state_after, dict):
+                state_after = {}
+            captured_fields = {
+                key: accepted_fields.get(key)
+                for key in (
+                    "project_type",
+                    "requirements",
+                    "referral_source",
+                    "whatsapp_confirmed",
+                    "preferred_phone",
+                )
+                if key in accepted_fields
+            }
+            log_context: dict[str, Any] = {
+                "input_channel": input_channel,
+                "shared_handler_used": True,
+                "conversation_state": response_payload.get("conversation_state"),
+                "state_before": {
+                    key: state_before.get(key)
+                    for key in (
+                        "project_type",
+                        "requirements",
+                        "referral_source",
+                        "whatsapp_confirmed",
+                        "preferred_phone",
+                        "booking_link_sent",
+                    )
+                    if key in state_before
+                },
+                "state_after": {
+                    key: state_after.get(key)
+                    for key in captured_fields
+                    if key in state_after
+                },
+                "captured_fields": captured_fields,
+                "booking_link_sent_before": bool(state_before.get("booking_link_sent")),
+                "booking_link_sent": bool(response_payload.get("booking_link_sent")),
+                "booking_link_sent_after": bool(response_payload.get("booking_link_sent")),
+                "attempted_booking_link_send": bool(
+                    response_payload.get("contains_booking_url")
+                ),
+                "booking_link_send_blocked": bool(
+                    response_payload.get("booking_link_sent")
+                    and state_before.get("booking_link_sent")
+                ),
+                "contains_booking_url": bool(
+                    response_payload.get("contains_booking_url")
+                    or response_payload.get("contains_booking_link")
+                ),
+                "should_send_text": bool(response_payload.get("should_send_text")),
+                "should_send_audio": bool(response_payload.get("should_send_audio")),
+                "contains_booking_link": bool(
+                    response_payload.get("contains_booking_link")
+                ),
+                "idle_reset_triggered": bool(response_payload.get("idle_reset_triggered")),
+                "inactivity_gap_seconds": response_payload.get("inactivity_gap_seconds"),
+                "handoff_triggered": response_payload.get("qualification_status") == "human_handoff",
+                "onboarding_sent": (
+                    "How to use this chat"
+                    in str(response_payload.get("whatsapp_text") or "")
+                    or "How to use this chat"
+                    in str(response_payload.get("reply_text") or "")
+                ),
+                "reply_text": str(response_payload.get("reply_text") or "")[:200],
+                "spoken_text": str(response_payload.get("spoken_text") or "")[:200],
+            }
+            if transcript is not None:
+                log_context["transcript_text"] = transcript[:200]
+            if user_message is not None:
+                log_context["normalized_user_message"] = user_message[:200]
+            log_qualification_event("qualification_turn_completed", **log_context)
+        except Exception:
+            return
+
+    def _resolve_inbound_user_message(
+        self,
+        *,
+        validated_data: dict[str, Any],
+        input_channel: str,
+        message_sid: str | None,
+        conversation_language: str,
+    ) -> tuple[str | None, str | None, dict[str, Any] | None]:
+        """
+        Normalize inbound text for the shared qualification handler.
+
+        Voice notes with media always transcribe first; optional Body text is
+        ignored when media is present so empty Twilio Body values do not bypass STT.
+        """
+        media_url = validated_data.get("media_url")
+        media_content_type = validated_data.get("media_content_type")
+        has_media = bool(media_url)
+        log_context = {
+            "input_channel": input_channel,
+            "has_media": has_media,
+            "media_content_type": media_content_type,
+            "message_sid_prefix": message_sid_prefix(message_sid),
+        }
+
+        if input_channel == "whatsapp_text":
+            message = validated_data.get("message")
+            log_qualification_event(
+                "qualification_inbound_message_resolved",
+                normalized_user_message=(message or "")[:120],
+                transcription_used=False,
+                **log_context,
+            )
+            return message, None, None
+
+        if has_media:
+            log_qualification_event(
+                "transcription_started",
+                **log_context,
+            )
+            transcription_started = time.perf_counter()
+            try:
+                message = self._transcription_service.transcribe(
+                    media_url=media_url,
+                    media_content_type=media_content_type,
+                    message_sid=message_sid,
+                    conversation_language=conversation_language,
+                )
+            except ExtractStepFailure as exc:
+                if "empty" in (exc.info.details or "").lower():
+                    log_qualification_event(
+                        "transcription_success",
+                        transcription_success=False,
+                        transcript_text_preview="",
+                        handoff_triggered=False,
+                        **log_context,
+                    )
+                    return None, None, build_voice_transcription_unclear_response(
+                        whatsapp_number=validated_data["whatsapp_number"],
+                        language=conversation_language,
+                    )
+                raise
+            log_latency_step(
+                "voice_transcription",
+                elapsed_ms_since(transcription_started),
+                message_sid=message_sid,
+            )
+            normalized = " ".join((message or "").split())
+            if not normalized:
+                log_qualification_event(
+                    "transcription_success",
+                    transcription_success=False,
+                    transcript_text_preview="",
+                    handoff_triggered=False,
+                    **log_context,
+                )
+                return None, None, build_voice_transcription_unclear_response(
+                    whatsapp_number=validated_data["whatsapp_number"],
+                    language=conversation_language,
+                )
+            log_qualification_event(
+                "transcription_success",
+                transcription_success=True,
+                transcript_text_preview=normalized[:120],
+                normalized_user_message=normalized[:120],
+                **log_context,
+            )
+            return normalized, normalized, None
+
+        message = validated_data.get("message")
+        normalized = " ".join((message or "").split()) or None
+        log_qualification_event(
+            "qualification_inbound_message_resolved",
+            normalized_user_message=(normalized or "")[:120],
+            transcription_used=False,
+            **log_context,
+        )
+        return normalized, normalized if normalized else None, None
 
     def _deliver_booking_link_if_needed(
         self,
@@ -275,8 +551,6 @@ class ExtractService:
 
         # LiveKit / realtime STT: ignore interim/partial transcripts entirely.
         if is_final is False:
-            from apps.qualification.api.logging import log_qualification_event
-
             log_qualification_event(
                 "voice_partial_transcript_ignored",
                 call_sid=call_sid,
@@ -320,7 +594,6 @@ class ExtractService:
 
         lock_key = normalize_conversation_lock_key(whatsapp_number)
         lock_handle = acquire_conversation_turn_lock(lock_key)
-        from apps.qualification.api.logging import log_qualification_event
 
         log_qualification_event(
             "qualification_conversation_lock",
@@ -438,27 +711,62 @@ class ExtractService:
 
         transcript: str | None = None
         conversation_language = get_conversation_language(whatsapp_number)
+        session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
+        session.refresh_from_db()
+        previous_last_activity_at = session.last_message_at
+        current_inbound_message_time = timezone.now()
+        booking_link_sent_before = session.booking_link_sent_at is not None
+        state_before = dict(get_accepted_fields(whatsapp_number))
+        state_before["booking_link_sent"] = booking_link_sent_before
 
-        if input_channel == "whatsapp_text":
-            message = validated_data.get("message")
-        elif validated_data.get("message"):
-            message = validated_data["message"]
-        else:
-            transcription_started = time.perf_counter()
-            message = self._transcription_service.transcribe(
-                media_url=validated_data["media_url"],
-                media_content_type=validated_data["media_content_type"],
-                message_sid=message_sid,
+        message, transcript, unclear_response = self._resolve_inbound_user_message(
+            validated_data=validated_data,
+            input_channel=input_channel,
+            message_sid=message_sid,
+            conversation_language=conversation_language,
+        )
+        idle_reset_triggered, inactivity_gap_seconds = self._maybe_apply_idle_reset_on_inbound(
+            session=session,
+            whatsapp_number=whatsapp_number,
+            previous_last_activity_at=previous_last_activity_at,
+            current_inbound_message_time=current_inbound_message_time,
+            input_channel=input_channel,
+            message_sid=message_sid,
+        )
+        if idle_reset_triggered:
+            booking_link_sent_before = False
+            state_before = {}
+            state_before["booking_link_sent"] = False
+
+        if unclear_response is not None:
+            turn_response = unclear_response
+            if idle_reset_triggered:
+                turn_response = dict(turn_response)
+                turn_response["idle_reset_triggered"] = True
+            response_payload = finalize_turn_response(
+                turn_response,
+                input_channel=input_channel,
+                transcript=transcript,
                 conversation_language=conversation_language,
+                whatsapp_number=whatsapp_number,
+                user_message=message or "",
             )
-            log_latency_step(
-                "voice_transcription",
-                elapsed_ms_since(transcription_started),
-                message_sid=message_sid,
+            response_payload["idle_reset_triggered"] = idle_reset_triggered
+            response_payload["inactivity_gap_seconds"] = inactivity_gap_seconds
+            response_payload = self._attach_conversation_state(response_payload)
+            self._log_turn_completed(
+                input_channel=input_channel,
+                response_payload=response_payload,
+                state_before=state_before,
+                whatsapp_number=whatsapp_number,
+                transcript=transcript,
+                user_message=message or "",
             )
-
-        if input_channel == "whatsapp_voice_note" and message:
-            transcript = message
+            if message_sid:
+                cache_turn_response(message_sid, response_payload)
+            self._touch_session_activity(whatsapp_number)
+            log_external_api_total(message_sid=message_sid)
+            return response_payload
 
         voice_turn_key_active = False
         if call_sid and message and is_final is not False:
@@ -496,43 +804,12 @@ class ExtractService:
             if inactivity_response is not None:
                 return inactivity_response
 
-        session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
-        session.refresh_from_db()
-        previous_last_activity_at = session.last_message_at
-        inactivity_gap_seconds = compute_inactivity_gap_seconds(session)
-        idle_reset_triggered = should_reset_qualification_after_inactivity(session)
-        state_before_reset = dict(get_accepted_fields(whatsapp_number))
-        if idle_reset_triggered:
-            from apps.qualification.api.logging import log_qualification_event
-
-            reset_qualification_progress_after_inactivity(
+        if not message:
+            turn_response = build_voice_transcription_unclear_response(
                 whatsapp_number=whatsapp_number,
-                session=session,
+                language=conversation_language,
             )
-            session.refresh_from_db()
-            log_qualification_event(
-                "qualification_idle_reset",
-                whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
-                message_sid_prefix=message_sid_prefix(message_sid),
-                previous_last_activity_at=(
-                    previous_last_activity_at.isoformat()
-                    if previous_last_activity_at is not None
-                    else None
-                ),
-                current_message_time=timezone.now().isoformat(),
-                inactivity_gap_seconds=inactivity_gap_seconds,
-                idle_reset_triggered=True,
-                state_before_reset=state_before_reset,
-                state_after_reset={},
-                onboarding_allowed=True,
-            )
-            log_qualification_event(
-                "qualification_reset_after_inactivity",
-                whatsapp_number_prefix=whatsapp_number_prefix(whatsapp_number),
-                message_sid_prefix=message_sid_prefix(message_sid),
-            )
-
-        if is_qualification_complete(get_accepted_fields(whatsapp_number)):
+        elif is_qualification_complete(get_accepted_fields(whatsapp_number)):
             turn_response = build_completed_retry_response(
                 whatsapp_number,
                 language=conversation_language,
@@ -584,10 +861,20 @@ class ExtractService:
             message_sid=message_sid,
             input_channel=input_channel,
         )
+        response_payload["idle_reset_triggered"] = idle_reset_triggered
+        response_payload["inactivity_gap_seconds"] = inactivity_gap_seconds
+        response_payload = self._attach_conversation_state(response_payload)
+
+        self._log_turn_completed(
+            input_channel=input_channel,
+            response_payload=response_payload,
+            state_before=state_before,
+            whatsapp_number=whatsapp_number,
+            transcript=transcript,
+            user_message=message,
+        )
 
         if call_sid and message:
-            from apps.qualification.api.logging import log_qualification_event
-
             # Exactly one TTS payload per successfully processed voice utterance.
             response_payload["tts_enqueued"] = bool(response_payload.get("spoken_text"))
             response_payload["duplicate_detected"] = False

@@ -71,6 +71,8 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
     "post_booking_thanks",
     "post_booking_exit",
     "post_booking_resend_request",
+    "voice_transcription_unclear",
+    "voice_transcription_unclear_spoken",
 )
 
 QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
@@ -157,7 +159,8 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "Perfect, thank you. Please book a time here: {booking_link}"
         ),
         "completion_spoken": (
-            "Perfect, thank you. I'll send the booking link to your WhatsApp now."
+            "Perfect, thank you. I've sent the booking link above. "
+            "You can choose a time whenever you're ready."
         ),
         "completion_whatsapp_booking_link": "Please book a time here: {booking_link}",
         "completion_pending_booking_link": (
@@ -230,6 +233,13 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         "post_booking_resend_request": (
             "The booking link is already shared above. Please use that link whenever "
             "you're ready."
+        ),
+        "voice_transcription_unclear": (
+            "Sorry, I couldn't understand the voice note clearly. "
+            "Please send it again or reply by text."
+        ),
+        "voice_transcription_unclear_spoken": (
+            "Sorry, I couldn't understand the voice note clearly. Please send it again."
         ),
         "generic_retry": "Could you please provide a little more detail?",
         "generic_error": "Sorry, I could not process that. Please try again.",
@@ -306,7 +316,8 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "ممتاز، شكرًا لك. يرجى حجز موعد من هنا: {booking_link}"
         ),
         "completion_spoken": (
-            "ممتاز، شكرًا لك. سأرسل رابط الحجز إلى واتساب الآن."
+            "ممتاز، شكرًا لك. لقد أرسلت رابط الحجز أعلاه. "
+            "يمكنك اختيار موعد في أي وقت يناسبك."
         ),
         "completion_whatsapp_booking_link": "يرجى حجز موعد من هنا: {booking_link}",
         "completion_pending_booking_link": (
@@ -373,6 +384,13 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         ),
         "post_booking_resend_request": (
             "رابط الحجز موجود أعلاه بالفعل. يرجى استخدامه متى ما كنت مستعدًا."
+        ),
+        "voice_transcription_unclear": (
+            "عذرًا، لم أتمكن من فهم الملاحظة الصوتية بوضوح. "
+            "يرجى إرسالها مرة أخرى أو الرد بالنص."
+        ),
+        "voice_transcription_unclear_spoken": (
+            "عذرًا، لم أتمكن من فهم الملاحظة الصوتية بوضوح. يرجى إرسالها مرة أخرى."
         ),
         "generic_retry": "هل يمكنك تزويدنا بمزيد من التفاصيل؟",
         "generic_error": "عذرًا، لم أتمكن من معالجة رسالتك. يرجى المحاولة مرة أخرى.",

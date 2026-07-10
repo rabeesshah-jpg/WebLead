@@ -373,9 +373,26 @@ def _load_onboarding_reintro_after_seconds() -> int:
     return timeout_seconds
 
 
-# Idle gap after which returning customers restart qualification and see onboarding again.
+# Deprecated: welcome-back onboarding only. Idle qualification reset uses SESSION_IDLE_RESET_SECONDS.
 ONBOARDING_REINTRO_AFTER_SECONDS = _load_onboarding_reintro_after_seconds()
-SESSION_IDLE_RESET_SECONDS = ONBOARDING_REINTRO_AFTER_SECONDS
+
+_SESSION_IDLE_RESET_SECONDS_ERROR = (
+    "SESSION_IDLE_RESET_SECONDS must be a positive integer."
+)
+
+
+def _load_session_idle_reset_seconds() -> int:
+    raw_value = env("SESSION_IDLE_RESET_SECONDS", default="300") or "300"
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_SESSION_IDLE_RESET_SECONDS_ERROR) from exc
+    if timeout_seconds <= 0:
+        raise ImproperlyConfigured(_SESSION_IDLE_RESET_SECONDS_ERROR)
+    return timeout_seconds
+
+
+SESSION_IDLE_RESET_SECONDS = _load_session_idle_reset_seconds()
 
 _WHATSAPP_MENU_PENDING_SECONDS_ERROR = (
     "WHATSAPP_MENU_PENDING_SECONDS must be a positive integer."

@@ -266,7 +266,7 @@ def test_configuration_failure_returns_503(mock_extract, client):
 
 
 @patch(
-    "apps.qualification.services.extract_service.handle_qualification_turn",
+    "apps.qualification.services.extract_service.run_qualification_turn",
     side_effect=QualificationServiceRequestError(),
 )
 def test_service_request_failure_returns_502(mock_turn_handler, client):
@@ -280,7 +280,7 @@ def test_service_request_failure_returns_502(mock_turn_handler, client):
 
 
 @patch(
-    "apps.qualification.services.extract_service.handle_qualification_turn",
+    "apps.qualification.services.extract_service.run_qualification_turn",
     side_effect=QualificationServiceUnavailableError(),
 )
 def test_service_unavailable_failure_returns_503(mock_turn_handler, client):

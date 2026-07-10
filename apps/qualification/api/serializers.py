@@ -332,11 +332,17 @@ class ExtractResponseSerializer(serializers.Serializer):
     send_booking_link = serializers.BooleanField()
     booking_link_sent = serializers.BooleanField()
     booking_link = serializers.CharField(allow_null=True)
+    should_send_text = serializers.BooleanField(required=False)
+    should_send_audio = serializers.BooleanField(required=False)
+    contains_booking_link = serializers.BooleanField(required=False)
+    text_fallback_reply = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     transcript = serializers.CharField(required=False, allow_null=True)
     language_command_action = serializers.CharField(required=False, allow_null=True)
     tts_enqueued = serializers.BooleanField(required=False)
     duplicate_detected = serializers.BooleanField(required=False)
     llm_parse_failed = serializers.BooleanField(required=False)
+    idle_reset_triggered = serializers.BooleanField(required=False)
+    inactivity_gap_seconds = serializers.IntegerField(required=False, allow_null=True)
     complete = serializers.BooleanField(required=False)
     classification = serializers.ListField(
         required=False,
@@ -353,7 +359,6 @@ class ExtractResponseSerializer(serializers.Serializer):
     next_required_field = serializers.CharField(required=False, allow_null=True)
     duplicate_or_locked = serializers.BooleanField(required=False)
     lock_timeout = serializers.BooleanField(required=False)
-    idle_reset_triggered = serializers.BooleanField(required=False)
     conversation_state = serializers.CharField(required=False, allow_null=True)
 
     def to_representation(self, instance):
@@ -366,9 +371,15 @@ class ExtractResponseSerializer(serializers.Serializer):
             "spoken_text",
             "whatsapp_text",
             "actions",
+            "should_send_text",
+            "should_send_audio",
+            "contains_booking_link",
+            "text_fallback_reply",
             "tts_enqueued",
             "duplicate_detected",
             "llm_parse_failed",
+            "idle_reset_triggered",
+            "inactivity_gap_seconds",
             "complete",
             "classification",
             "saved_services",
@@ -376,7 +387,6 @@ class ExtractResponseSerializer(serializers.Serializer):
             "next_required_field",
             "duplicate_or_locked",
             "lock_timeout",
-            "idle_reset_triggered",
             "conversation_state",
         ):
             if optional_key not in instance:

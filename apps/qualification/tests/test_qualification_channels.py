@@ -32,7 +32,7 @@ VOICE_COMPLETION_SPOKEN = get_customer_message(
 )
 VOICE_COMPLETION_WHATSAPP = get_customer_message(
     language="en",
-    key="completion_whatsapp_booking_link",
+    key="completion_with_booking_link",
     booking_link=BOOKING_LINK,
 )
 TEXT_COMPLETION_REPLY = get_customer_message(
@@ -132,6 +132,8 @@ def test_text_input_returns_reply_mode_text(mock_extract, client):
     body = response.json()
     assert response.status_code == 200
     assert body["reply_mode"] == "text"
+    assert body["should_send_text"] is True
+    assert body["should_send_audio"] is False
     assert body["send_booking_link"] is False
     assert body["booking_link"] is None
     assert "transcript" not in body
@@ -167,6 +169,8 @@ def test_voice_note_input_returns_reply_mode_voice_and_transcript(
     assert second.status_code == 200
     body = second.json()
     assert body["reply_mode"] == "voice"
+    assert body["should_send_audio"] is True
+    assert body["should_send_text"] is False
     assert body["transcript"] == "Facebook"
     assert body["next_field"] == "whatsapp_confirmed"
     mock_download.assert_called_once_with(MEDIA_URL)
@@ -263,15 +267,36 @@ def test_completed_voice_flow_returns_voice_completion_text_and_booking_link(
     assert body["reply_mode"] == "voice"
     assert body["qualification_status"] == "completed"
     assert body["spoken_text"] == VOICE_COMPLETION_SPOKEN
-    assert body["reply_text"] == VOICE_COMPLETION_SPOKEN
+    assert body["reply_text"] == VOICE_COMPLETION_WHATSAPP
+    assert BOOKING_LINK in body["reply_text"]
     assert BOOKING_LINK not in body["spoken_text"]
-    assert BOOKING_LINK not in body["reply_text"]
     assert body["whatsapp_text"] == VOICE_COMPLETION_WHATSAPP
     assert BOOKING_LINK in body["whatsapp_text"]
     assert body["send_booking_link"] is True
     assert body["booking_link_sent"] is True
     assert body["booking_link"] == BOOKING_LINK
-    mock_twilio_booking_link_send.assert_called_once()
+    assert body["should_send_text"] is True
+    assert body["should_send_audio"] is True
+    assert body["contains_booking_link"] is True
+    mock_twilio_booking_link_send.assert_not_called()
+    mock_extract.assert_not_called()
+
+
+@override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_text_after_booking_link_returns_text_only(mock_extract, client):
+    from apps.qualification.tests.test_post_booking_link_follow_up import (
+        _complete_qualification,
+        _post,
+    )
+
+    _complete_qualification(client)
+    response = _post(client, "How are you", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce87")
+    body = response.json()
+
+    assert body["should_send_text"] is True
+    assert body["should_send_audio"] is False
+    assert "booking link above" in body["reply_text"]
     mock_extract.assert_not_called()
 
 

@@ -301,8 +301,7 @@ class WhatsAppMenuService:
         Show the menu only for explicit inactivity-timer jobs.
 
         Normal ``whatsapp_text`` / ``whatsapp_voice_note`` inbound messages must
-        never auto-open the menu after idle; idle customers get welcome-back
-        re-intro via onboarding instead. Callers must pass
+        never auto-open the menu after idle. Callers must pass
         ``event_source == "inactivity_timer"``.
         """
         if not is_lead_qualification_enabled():

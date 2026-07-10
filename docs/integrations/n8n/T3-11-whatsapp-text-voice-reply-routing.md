@@ -24,7 +24,11 @@ Every successful response includes:
 - `reply_mode`: `text` or `voice` based on the latest inbound `input_channel`
 - `reply_text`: channel-facing copy (for voice, this matches `spoken_text` and never contains a URL)
 - `spoken_text`: what TTS / the voice agent should say (never contains a URL)
-- `whatsapp_text`: text that may be delivered as WhatsApp/SMS (may include the booking URL)
+- `whatsapp_text`: text body for Twilio when `should_send_text` is true
+- `should_send_text`: when true, n8n may send `whatsapp_text` as a WhatsApp text message
+- `should_send_audio`: when true, n8n should call render-audio and send voice media
+- `text_fallback_reply`: longer text copy used only when render-audio returns `fallback_to_text=true`
+- `contains_booking_link`: true when the booking URL is present in outbound text fields
 - `actions`: reserved list (currently empty)
 - `conversation_language`: `en` or `ar` from persisted session state
 - `send_booking_link`: `true` for voice completion when a booking URL should be delivered as WhatsApp text
@@ -37,22 +41,24 @@ Optional realtime/LiveKit request fields:
 
 When `qualification_status` is `completed` on a **voice** turn:
 
-- `spoken_text` / `reply_text`: `Perfect, thank you. I'll send the booking link to your WhatsApp now.`
-- `whatsapp_text`: `Please book a time here: <BOOKING_LINK>`
-- `send_booking_link`: `true` (Django delivers the WhatsApp booking text once per session)
+- `spoken_text` / `reply_text`: `Perfect, thank you. I've sent the booking link above. You can choose a time whenever you're ready.`
+- `whatsapp_text`: `Perfect, thank you. Please book a time here: <BOOKING_LINK>`
+- `should_send_text`: `true` (booking link text only, once per session)
+- `should_send_audio`: `true`
+- `send_booking_link`: `false` (URL is already in `whatsapp_text`)
 
-When completed on a **text** turn, `reply_text` remains the single WhatsApp message that already includes the booking URL, and `send_booking_link` is `false`.
+When completed on a **text** turn, `reply_text` remains the single WhatsApp message that already includes the booking URL, `should_send_text` is `true`, and `should_send_audio` is `false`.
 
 ## n8n routing
 
 ### Text route (`reply_mode = "text"`)
 
-1. Use the existing Twilio WhatsApp send-message node.
-2. Put `reply_text` (or `whatsapp_text`) in the Twilio message body.
+1. **Only when** `should_send_text = true`: send `whatsapp_text` (or `reply_text`) via the Twilio WhatsApp text node.
+2. Do **not** call render-audio when `should_send_audio = false`.
 
 ### Voice route (`reply_mode = "voice"`)
 
-1. Call `POST /api/internal/qualification/render-audio/` with:
+1. **Only when** `should_send_audio = true`: call `POST /api/internal/qualification/render-audio/` with:
 
 ```json
 {
@@ -71,17 +77,28 @@ Do **not** pass a booking URL into render-audio. Django sanitizes URLs out of TT
 ```text
 TTS Fallback Required?
   condition: {{ $json.fallback_to_text }} equals true
-  ├── true  → Send WhatsApp Text Reply using the original reply_text
+  ├── true  → Send WhatsApp Text Reply using text_fallback_reply or whatsapp_text
   └── false → Send WhatsApp Voice Reply using media_url / audio_url
 ```
 
-3. Send voice only when:
+3. **Only when** `should_send_text = true`: send `whatsapp_text` as a separate Twilio text message (first-time booking link on voice completion).
+
+4. For normal voice turns (`should_send_text = false`), do **not** send `reply_text` or `whatsapp_text` as text.
 
 - `fallback_to_text = false`
+- `should_send_audio = true`
 - `media_url` or `audio_url` is present
 - `content_type` / `audio_content_type` is `audio/ogg`
 
-### Render-audio success response
+### Booking link on voice completion
+
+When `should_send_text = true` and `contains_booking_link = true`:
+
+1. Send rendered voice first (when `should_send_audio = true`).
+2. Send one Twilio text message with `whatsapp_text` (includes the booking URL).
+3. Do not pass the booking URL to render-audio.
+
+Post-booking voice turns use `should_send_text = false` and audio-only replies that reference the link above.
 
 ```json
 {
@@ -114,18 +131,9 @@ Returned with HTTP `200` when Arabic or English TTS is unavailable or fails:
 }
 ```
 
-Use the original qualification `reply_text` for the text fallback message. The render-audio endpoint does not generate or replace translated reply text.
+Use `text_fallback_reply` or `whatsapp_text` for the text fallback message. The render-audio endpoint does not generate or replace translated reply text.
 
-### Booking link follow-up (`send_booking_link = true`)
-
-Regardless of reply mode:
-
-1. Send the primary reply first (text body or rendered voice media).
-2. Send a second Twilio text message containing `booking_link`.
-
-This keeps long URLs out of voice replies and gives text customers a dedicated link message.
-
-## MessageSid idempotency
+### Render-audio success response
 
 Always pass Twilio `MessageSid` as `message_sid`.
 
@@ -140,19 +148,18 @@ Twilio inbound
 → Allow New MessageSid
 → IF NumMedia > 0
    → POST Django extract with input_channel=whatsapp_voice_note and media_url=MediaUrl0
-   → IF reply_mode = voice
-      → POST Django render-audio(reply_text, whatsapp_number, message_sid)
+   → IF should_send_audio = true
+      → POST Django render-audio(spoken_text, whatsapp_number, message_sid)
       → IF fallback_to_text = true
-         → Twilio send reply_text as text
+         → Twilio send text_fallback_reply or whatsapp_text
       → ELSE
          → Twilio send media_url
-   → IF send_booking_link = true
-      → Twilio send booking_link as text
+   → IF should_send_text = true
+      → Twilio send whatsapp_text as text
 → ELSE
    → POST Django extract with input_channel=whatsapp_text and message=Body
-   → Twilio send reply_text
-   → IF send_booking_link = true
-      → Twilio send booking_link as text
+   → IF should_send_text = true
+      → Twilio send reply_text or whatsapp_text
 ```
 
 ## Operational notes

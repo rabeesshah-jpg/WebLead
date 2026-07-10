@@ -24,7 +24,10 @@ _ONBOARDING_MENU_MARKERS = (
     "• ",
 )
 
-DEFAULT_TTS_URL_REPLACEMENT = "I'll send the link to your WhatsApp now."
+DEFAULT_TTS_URL_REPLACEMENT = (
+    "Perfect, thank you. I've sent the booking link above. "
+    "You can choose a time whenever you're ready."
+)
 SPOKEN_TEXT_WARN_LENGTH = 180
 
 
