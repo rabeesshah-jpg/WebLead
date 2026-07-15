@@ -29,6 +29,35 @@ def normalize_conversation_language(language: str | None) -> str:
     return LANGUAGE_ENGLISH
 
 
+# Explicit language words accepted as a language switch at any point in the
+# conversation. Numbered answers ("1"/"2") are intentionally excluded so they
+# remain valid answers to the numbered option questions (customer_type,
+# referral_source, project_type).
+EXPLICIT_LANGUAGE_SWITCH_KEYWORDS: dict[str, str] = {
+    "english": LANGUAGE_ENGLISH,
+    "en": LANGUAGE_ENGLISH,
+    "arabic": LANGUAGE_ARABIC,
+    "ar": LANGUAGE_ARABIC,
+    "العربية": LANGUAGE_ARABIC,
+    "عربية": LANGUAGE_ARABIC,
+    "عربي": LANGUAGE_ARABIC,
+}
+
+
+def resolve_explicit_language_switch(body: str | None) -> str | None:
+    """
+    Resolve a whole-message language word (e.g. "English", "العربية", "ar").
+
+    Returns the language code only when the entire message is an unambiguous
+    language selection so longer sentences and numbered option answers are never
+    misread as a language change.
+    """
+    if not body:
+        return None
+    text = " ".join(str(body).split()).strip().lower().strip(" .!،؟?")
+    return EXPLICIT_LANGUAGE_SWITCH_KEYWORDS.get(text)
+
+
 def resolve_selected_language(
     *,
     button_payload: str | None,

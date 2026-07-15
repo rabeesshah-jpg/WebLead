@@ -45,6 +45,7 @@ EXTRACT_SUCCESS_FIELD_NAMES = frozenset(
         "idle_reset_triggered",
         "inactivity_gap_seconds",
         "conversation_state",
+        "option_template",
         # Rich inbound / turn metadata (present when classification runs).
         "classification",
         "saved_services",

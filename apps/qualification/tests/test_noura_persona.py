@@ -144,16 +144,21 @@ def test_help_request_returns_full_onboarding_instructions(mock_extract, client)
 def test_completed_fields_are_not_repeated_after_small_talk(mock_extract, client):
     save_accepted_fields(
         WHATSAPP_NUMBER,
-        {"project_type": "new_website"},
+        {
+            "customer_type": "existing_customer",
+            "business_type": "biz_local_service",
+            "business_type_number": 1,
+            "business_type_answer": "Local service business (clinic, salon, restaurant)",
+        },
     )
 
     response = _post_text(client, "How are you?")
 
     body = response.json()
     assert response.status_code == 200
-    assert "May I know what type of website help you need?" in body["reply_text"]
-    assert body["next_field"] == "requirements"
-    assert "new website or an upgrade" not in body["reply_text"]
+    assert "Do you currently have a website?" in body["reply_text"]
+    assert body["next_field"] == "website_status"
+    assert "What best describes your business?" not in body["reply_text"]
     mock_extract.assert_not_called()
 
 
@@ -246,7 +251,7 @@ def test_tell_me_about_yourself_during_qualification_skips_full_onboarding(
     mock_extract,
     client,
 ):
-    save_accepted_fields(WHATSAPP_NUMBER, {"project_type": "new_website"})
+    save_accepted_fields(WHATSAPP_NUMBER, {"customer_type": "existing_customer"})
 
     response = _post_text(
         client,
@@ -257,18 +262,18 @@ def test_tell_me_about_yourself_during_qualification_skips_full_onboarding(
     assert response.status_code == 200
     assert "I'm Noura from Good Websites" in body["reply_text"]
     assert "website inquiries" in body["reply_text"]
-    assert "May I know what type of website help you need?" in body["reply_text"]
+    assert "What best describes your business?" in body["reply_text"]
     assert "How to use this chat" not in body["reply_text"]
     assert "Send M to open the menu" not in body["reply_text"]
     assert "about_yourself_question" in body["classification"]
-    assert body["accepted_fields"] == {"project_type": "new_website"}
+    assert body["accepted_fields"] == {"customer_type": "existing_customer"}
     mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_small_talk_during_active_qualification_skips_full_onboarding(mock_extract, client):
-    save_accepted_fields(WHATSAPP_NUMBER, {"project_type": "new_website"})
+    save_accepted_fields(WHATSAPP_NUMBER, {"customer_type": "existing_customer"})
 
     response = _post_text(client, "how are you bro")
 
@@ -276,7 +281,7 @@ def test_small_talk_during_active_qualification_skips_full_onboarding(mock_extra
     assert response.status_code == 200
     assert "doing well" in body["reply_text"]
     assert "How to use this chat" not in body["reply_text"]
-    assert body["accepted_fields"] == {"project_type": "new_website"}
+    assert body["accepted_fields"] == {"customer_type": "existing_customer"}
     mock_extract.assert_not_called()
 
 
@@ -340,64 +345,67 @@ def _assert_no_onboarding(body: dict) -> None:
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_both_answer_skips_onboarding_and_asks_requirements(mock_extract, client):
-    response = _post_text(client, "Both")
+def test_valid_numbered_answer_skips_onboarding_and_asks_next_question(mock_extract, client):
+    save_accepted_fields(WHATSAPP_NUMBER, {"customer_type": "existing_customer"})
+
+    response = _post_text(client, "1")
 
     body = response.json()
     assert response.status_code == 200
-    assert body["accepted_fields"]["project_type"] == "new_and_upgrade"
-    assert body["next_field"] == "requirements"
-    assert body["reply_text"] == (
-        "Great, thanks. May I know what type of website help you need?"
-    )
+    assert body["accepted_fields"]["business_type"] == "biz_local_service"
+    assert body["next_field"] == "website_status"
+    assert "Do you currently have a website?" in body["reply_text"]
     _assert_no_onboarding(body)
     mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_new_website_answer_skips_onboarding_and_asks_requirements(mock_extract, client):
+def test_keyword_project_type_answer_does_not_skip_numbered_questions(mock_extract, client):
+    save_accepted_fields(WHATSAPP_NUMBER, {"customer_type": "existing_customer"})
+
     response = _post_text(client, "new website")
 
     body = response.json()
     assert response.status_code == 200
-    assert body["accepted_fields"]["project_type"] == "new_website"
-    assert body["next_field"] == "requirements"
-    assert "Great, thanks." in body["reply_text"]
-    assert "May I know what type of website help you need?" in body["reply_text"]
+    assert "business_type" not in body["accepted_fields"]
+    assert body["next_field"] == "business_type"
+    assert "What best describes your business?" in body["reply_text"]
     _assert_no_onboarding(body)
     mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_upgrade_existing_website_skips_onboarding_and_asks_requirements(mock_extract, client):
+def test_upgrade_existing_website_does_not_advance_numbered_flow(mock_extract, client):
+    save_accepted_fields(WHATSAPP_NUMBER, {"customer_type": "existing_customer"})
+
     response = _post_text(client, "upgrade existing website")
 
     body = response.json()
     assert response.status_code == 200
-    assert body["accepted_fields"]["project_type"] == "website_upgrade"
-    assert body["next_field"] == "requirements"
-    assert "Great, thanks." in body["reply_text"]
+    assert "business_type" not in body["accepted_fields"]
+    assert body["next_field"] == "business_type"
+    assert "What best describes your business?" in body["reply_text"]
     _assert_no_onboarding(body)
     mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_nice_good_while_waiting_for_requirements_does_not_store_requirements(
+def test_nice_good_while_waiting_for_numbered_question_does_not_store_answer(
     mock_extract,
     client,
 ):
-    _seed_onboarded_qualification(project_type="new_and_upgrade")
+    _seed_onboarded_qualification(customer_type="existing_customer")
 
     response = _post_text(client, "Nice good")
 
     body = response.json()
     assert response.status_code == 200
-    assert body["accepted_fields"] == {"project_type": "new_and_upgrade"}
-    assert body["next_field"] == "requirements"
-    assert body["reply_text"] == "May I know what type of website help you need?"
+    assert body["accepted_fields"] == {"customer_type": "existing_customer"}
+    assert body["next_field"] == "business_type"
+    assert "What best describes your business?" in body["reply_text"]
     assert "I've noted that" not in body["reply_text"]
     _assert_no_onboarding(body)
     mock_extract.assert_not_called()
@@ -405,19 +413,18 @@ def test_nice_good_while_waiting_for_requirements_does_not_store_requirements(
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_ecommerce_requirement_stores_and_asks_referral_source(mock_extract, client):
-    _seed_onboarded_qualification(project_type="new_and_upgrade")
+def test_ecommerce_text_while_waiting_for_business_type_does_not_advance(
+    mock_extract, client
+):
+    _seed_onboarded_qualification(customer_type="existing_customer")
 
     response = _post_text(client, "E-commerce website")
 
     body = response.json()
     assert response.status_code == 200
-    assert body["accepted_fields"]["project_type"] == "new_and_upgrade"
-    assert "E-commerce website" in body["accepted_fields"]["requirements"]
-    assert body["next_field"] == "referral_source"
-    assert body["reply_text"] == (
-        "Thank you. How did you hear about Good Websites?"
-    )
+    assert body["accepted_fields"] == {"customer_type": "existing_customer"}
+    assert body["next_field"] == "business_type"
+    assert "What best describes your business?" in body["reply_text"]
     _assert_no_onboarding(body)
     mock_extract.assert_not_called()
 
@@ -425,7 +432,25 @@ def test_ecommerce_requirement_stores_and_asks_referral_source(mock_extract, cli
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_valid_llm_capture_never_replays_onboarding(mock_extract, client):
-    _seed_onboarded_qualification(project_type="new_website", requirements="shop site")
+    _seed_onboarded_qualification(
+        customer_type="new_customer",
+        business_type="biz_local_service",
+        business_type_number=1,
+        business_type_answer="Local service business (clinic, salon, restaurant)",
+        website_status="site_none",
+        website_status_number=1,
+        website_status_answer="No website yet",
+        paid_ads="ads_none",
+        paid_ads_number=1,
+        paid_ads_answer="No",
+        main_goal="goal_website_only",
+        main_goal_number=1,
+        main_goal_answer="A clean, professional website that I don't have to worry about",
+        launch_timeline="timeline_30d",
+        launch_timeline_number=1,
+        launch_timeline_answer="Within 30 days",
+        requirements="shop site",
+    )
     mock_extract.return_value = QualificationFieldFilterResult(
         accepted_fields={"referral_source": "Instagram"},
         rejected_fields=(),
@@ -437,12 +462,11 @@ def test_valid_llm_capture_never_replays_onboarding(mock_extract, client):
     body = response.json()
     assert response.status_code == 200
     assert body["accepted_fields"]["referral_source"] == "Instagram"
-    assert body["next_field"] == "whatsapp_confirmed"
-    assert body["reply_text"] == (
-        "Thanks. Is this the best contact number for our team to reach you?"
-    )
+    assert body["next_field"] is None
+    assert body["qualification_status"] == "completed"
+    assert "best contact number" not in body["reply_text"]
     _assert_no_onboarding(body)
-    mock_extract.assert_called_once()
+    mock_extract.assert_not_called()
 
 
 def test_infer_project_type_from_answer_variants():

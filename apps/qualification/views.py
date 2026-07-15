@@ -42,6 +42,9 @@ from apps.qualification.qualification_turn import (
     QualificationTurnProcessingError,
 )
 from apps.qualification.services.extract_service import ExtractService
+from apps.qualification.services.existing_customer_live_agent_service import (
+    ExistingCustomerHandoffError,
+)
 from apps.qualification.services.language_gate_service import (
     LanguageGateConfigurationError,
     LanguageGateSendError,
@@ -92,6 +95,18 @@ def _normalize_optional_string(value: Any) -> str | None:
 
 def _log_event(request: HttpRequest, event: str, *, level: int = logging.INFO) -> None:
     log_qualification_request_event(request, event, level=level)
+
+
+def _log_unexpected_error(
+    request: HttpRequest,
+    exc: BaseException,
+    *,
+    turn_request: QualificationTurnRequest | None = None,
+) -> None:
+    """Log unexpected extract failures with full traceback for operators."""
+    from apps.qualification.api.logging import log_unexpected_error
+
+    log_unexpected_error(request, exc, turn_request=turn_request)
 
 
 def _safe_failure_type(exc: BaseException) -> str:
@@ -466,6 +481,12 @@ def internal_qualification_extract(request: HttpRequest) -> JsonResponse:
             {"error": "Qualification service request failed."},
             status=502,
         )
+    except ExistingCustomerHandoffError as exc:
+        _log_upstream_request_failed(request, exc, turn_request=turn_request)
+        return JsonResponse(
+            {"error": "Qualification service request failed."},
+            status=502,
+        )
     except ExtractStepFailure as exc:
         return JsonResponse({"error": exc.info.public_message}, status=502)
     except QualificationServiceRequestError as exc:
@@ -474,11 +495,11 @@ def internal_qualification_extract(request: HttpRequest) -> JsonResponse:
             {"error": "Qualification service request failed."},
             status=502,
         )
-    except QualificationTurnProcessingError:
-        _log_event(request, "qualification_internal_unexpected_error", level=logging.ERROR)
+    except QualificationTurnProcessingError as exc:
+        _log_unexpected_error(request, exc, turn_request=turn_request)
         return JsonResponse({"error": "Internal server error."}, status=500)
-    except Exception:
-        _log_event(request, "qualification_internal_unexpected_error", level=logging.ERROR)
+    except Exception as exc:
+        _log_unexpected_error(request, exc, turn_request=turn_request)
         return JsonResponse({"error": "Internal server error."}, status=500)
 
     return JsonResponse(response_payload, status=200)

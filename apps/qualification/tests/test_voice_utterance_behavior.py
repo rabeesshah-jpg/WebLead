@@ -231,7 +231,7 @@ def test_irrelevant_message_redirects_politely(client: Client):
     body = response.json()
     assert "few basic project details" in body["reply_text"]
     assert "new website" in body["reply_text"]
-    assert body["next_field"] == "project_type"
+    assert body["next_field"] == "business_type"
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET)
@@ -282,7 +282,7 @@ def test_fallback_and_normal_response_not_both_queued():
             "accepted_fields": {},
             "rejected_fields": {},
             "human_handoff_requested": False,
-            "next_field": "project_type",
+            "next_field": "business_type",
             "reply_text": "Are you looking for a new website or an upgrade to your existing website?",
             "qualification_status": "in_progress",
             "preferred_phone": None,

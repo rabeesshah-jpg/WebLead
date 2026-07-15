@@ -109,3 +109,22 @@ def log_upstream_timeout(
         level=logging.ERROR,
         **context,
     )
+
+
+def log_unexpected_error(
+    request: HttpRequest,
+    exc: BaseException,
+    *,
+    turn_request: TurnRequestContext | None = None,
+) -> None:
+    """Log unexpected extract failures with full traceback for operators."""
+    context = {
+        "event": "qualification_internal_unexpected_error",
+        "request_path": request.path,
+        "failure_type": safe_failure_type(exc),
+        "timestamp": timezone.now().isoformat(),
+        **_turn_request_context(turn_request),
+    }
+    logger.exception(
+        json.dumps(context, separators=(",", ":"), default=str),
+    )

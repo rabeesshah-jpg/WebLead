@@ -173,7 +173,8 @@ def test_restart_resets_booking_link_sent_for_new_session(mock_extract, client):
     body = response.json()
 
     assert response.status_code == 200
-    assert body["qualification_status"] == "in_progress"
+    assert body["status"] == "awaiting_language_selection"
     session.refresh_from_db()
     assert session.booking_link_sent_at is None
+    assert session.language is None
     mock_extract.assert_not_called()

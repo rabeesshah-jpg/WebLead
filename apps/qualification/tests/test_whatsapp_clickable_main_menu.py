@@ -45,10 +45,12 @@ MAIN_MENU_SETTINGS = {
     "TWILIO_WHATSAPP_MENU_CONTENT_SID": MENU_CONTENT_SID,
     "TWILIO_MENU_CONTENT_SID": "",
     "LEAD_QUALIFICATION_ENABLED": True,
+    "SESSION_IDLE_RESET_SECONDS": 7200,
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
 }
 
 IN_PROGRESS_FIELDS = {
+    "customer_type": "new_customer",
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
     "referral_source": "Google",
@@ -57,6 +59,7 @@ IN_PROGRESS_FIELDS = {
 }
 
 PARTIAL_FIELDS = {
+    "customer_type": "new_customer",
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
 }
@@ -152,7 +155,8 @@ def test_menu_command_sends_twilio_content_sid_instead_of_plain_text(mock_send_m
             SID_MENU_RESTART,
             lambda body, session: (
                 get_accepted_fields(VALID_WHATSAPP_NUMBER) == {}
-                and body["next_field"] == "project_type"
+                and body.get("status") == "awaiting_language_selection"
+                and session.language is None
             ),
         ),
         (

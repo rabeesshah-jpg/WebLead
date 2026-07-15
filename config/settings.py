@@ -74,6 +74,15 @@ TWILIO_WHATSAPP_MENU_CONTENT_SID = (
 )
 # WhatsApp sender used when sending Content API messages (optional until outbound send is wired).
 TWILIO_WHATSAPP_FROM_NUMBER = env("TWILIO_WHATSAPP_FROM_NUMBER", default="")
+# Business Type list-picker Content SIDs (English / Arabic).
+TWILIO_BUSINESS_TYPE_CONTENT_SID_EN = env(
+    "TWILIO_BUSINESS_TYPE_CONTENT_SID_EN",
+    default="HX90d7ec0824c2a0fcc066f69c5696f1cd",
+)
+TWILIO_BUSINESS_TYPE_CONTENT_SID_AR = env(
+    "TWILIO_BUSINESS_TYPE_CONTENT_SID_AR",
+    default="HX666fdbe4a262136dfcc820d32e80795f",
+)
 # Master switch for WhatsApp lead qualification flows (menu, inactivity, extraction).
 LEAD_QUALIFICATION_ENABLED = env.bool("LEAD_QUALIFICATION_ENABLED", default=True)
 
@@ -114,6 +123,9 @@ N8N_WHATSAPP_WEBHOOK_URL = env("N8N_WHATSAPP_WEBHOOK_URL", default="")
 N8N_WEBHOOK_SECRET = env("N8N_WEBHOOK_SECRET", default="")
 N8N_FORWARD_TIMEOUT_SECONDS = env.int("N8N_FORWARD_TIMEOUT_SECONDS", default=5)
 N8N_QUALIFICATION_API_SECRET = env("N8N_QUALIFICATION_API_SECRET", default="")
+# Optional dedicated webhook for delayed option_template delivery (JSON). Falls back
+# to N8N_WHATSAPP_WEBHOOK_URL; n8n must Switch on option_template=project_type.
+N8N_OPTION_TEMPLATE_WEBHOOK_URL = env("N8N_OPTION_TEMPLATE_WEBHOOK_URL", default="")
 WEBLEAD_VOICE_EVENT_SECRET = env("WEBLEAD_VOICE_EVENT_SECRET", default="")
 
 _QUALIFICATION_CONFIDENCE_THRESHOLD_ERROR = (
@@ -288,6 +300,18 @@ QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS = (
     _load_qualification_idempotency_processing_ttl_seconds()
 )
 
+# Celery: durable delayed jobs (existing-customer Noura + Business Type picker).
+_CELERY_BROKER_DEFAULT = QUALIFICATION_REDIS_URL or "redis://127.0.0.1:6379/0"
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="") or _CELERY_BROKER_DEFAULT
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="") or CELERY_BROKER_URL
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+CELERY_TASK_EAGER_PROPAGATES = env.bool("CELERY_TASK_EAGER_PROPAGATES", default=True)
+CELERY_TASK_TRACK_STARTED = True
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+
 _QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS_ERROR = (
     "QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS must be a positive number."
 )
@@ -393,6 +417,24 @@ def _load_session_idle_reset_seconds() -> int:
 
 
 SESSION_IDLE_RESET_SECONDS = _load_session_idle_reset_seconds()
+
+_EXISTING_CUSTOMER_FOLLOWUP_DELAY_SECONDS_ERROR = (
+    "EXISTING_CUSTOMER_FOLLOWUP_DELAY_SECONDS must be a non-negative integer."
+)
+
+
+def _load_existing_customer_followup_delay_seconds() -> int:
+    raw_value = env("EXISTING_CUSTOMER_FOLLOWUP_DELAY_SECONDS", default="10") or "10"
+    try:
+        delay_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(_EXISTING_CUSTOMER_FOLLOWUP_DELAY_SECONDS_ERROR) from exc
+    if delay_seconds < 0:
+        raise ImproperlyConfigured(_EXISTING_CUSTOMER_FOLLOWUP_DELAY_SECONDS_ERROR)
+    return delay_seconds
+
+
+EXISTING_CUSTOMER_FOLLOWUP_DELAY_SECONDS = _load_existing_customer_followup_delay_seconds()
 
 _WHATSAPP_MENU_PENDING_SECONDS_ERROR = (
     "WHATSAPP_MENU_PENDING_SECONDS must be a positive integer."

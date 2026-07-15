@@ -59,7 +59,7 @@ def _turn_response(reply_text: str = "Hello there") -> dict:
         "accepted_fields": {},
         "rejected_fields": {},
         "human_handoff_requested": False,
-        "next_field": "project_type",
+        "next_field": "business_type",
         "reply_text": reply_text,
         "qualification_status": "in_progress",
         "preferred_phone": None,

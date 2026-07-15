@@ -39,6 +39,9 @@ from apps.qualification.services.conversation_session_service import (
     mark_onboarding_intro_sent,
     mark_session_human_handoff_requested,
 )
+from apps.qualification.services.existing_customer_live_agent_service import (
+    is_waiting_for_existing_customer_live_agent,
+)
 from apps.qualification.services.language_gate_service import (
     LanguageGateConfigurationError,
     LanguageGateSendError,
@@ -75,14 +78,19 @@ def build_awaiting_menu_selection_response() -> dict[str, str]:
 
 def build_restart_intro_response(*, language: str) -> dict[str, Any]:
     """Return a fresh in-progress qualification response after restart."""
-    from apps.qualification.domain.messages import get_customer_message
+    from apps.qualification.domain.messages import (
+        get_customer_message,
+        get_qualification_question,
+    )
 
+    intro = get_customer_message(language=language, key="restart_intro")
+    question = get_qualification_question(language=language, field="customer_type")
     return {
         "accepted_fields": {},
         "rejected_fields": {},
         "human_handoff_requested": False,
-        "next_field": "project_type",
-        "reply_text": get_customer_message(language=language, key="restart_intro"),
+        "next_field": "customer_type",
+        "reply_text": f"{intro}\n\n{question}".strip(),
         "qualification_status": "in_progress",
         "preferred_phone": None,
         "conversation_language": language,
@@ -146,6 +154,8 @@ class WhatsAppMenuService:
             return WhatsAppMenuResult(handled=False)
 
         whatsapp_number = validated_data["whatsapp_number"]
+        if is_waiting_for_existing_customer_live_agent(whatsapp_number):
+            return WhatsAppMenuResult(handled=False)
         input_channel = validated_data["input_channel"]
         message_sid = validated_data.get("message_sid")
         button_text = validated_data.get("button_text")
@@ -211,6 +221,8 @@ class WhatsAppMenuService:
             return self.evaluate_button_payload(validated_data, transcript=transcript)
 
         whatsapp_number = validated_data["whatsapp_number"]
+        if is_waiting_for_existing_customer_live_agent(whatsapp_number):
+            return WhatsAppMenuResult(handled=False)
         input_channel = validated_data["input_channel"]
         message_sid = validated_data.get("message_sid")
         now = timezone.now()
@@ -315,6 +327,8 @@ class WhatsAppMenuService:
             return WhatsAppMenuResult(handled=False)
 
         whatsapp_number = validated_data["whatsapp_number"]
+        if is_waiting_for_existing_customer_live_agent(whatsapp_number):
+            return WhatsAppMenuResult(handled=False)
         input_channel = validated_data["input_channel"]
         message_sid = validated_data.get("message_sid")
         now = timezone.now()
@@ -502,24 +516,31 @@ class WhatsAppMenuService:
             whatsapp_number=whatsapp_number,
             session=session,
         )
-        response = self._finalize(
-            response=build_restart_intro_response(language=language),
+        session.refresh_from_db()
+        # New conversation: reuse the shared language-selection gate instead of
+        # skipping straight to qualification with the previous language.
+        gate_result = trigger_language_flow(
+            session=session,
+            whatsapp_number=whatsapp_number,
             validated_data=validated_data,
-            language=language,
-            transcript=transcript,
+            message_sid=message_sid,
+            input_channel=input_channel,
+            log_event="whatsapp_restart_language_selector_sent",
+            entry_source="restart",
         )
-        append_conversation_turn(
-            whatsapp_number,
-            user_message=message,
-            assistant_reply=response.get("reply_text", ""),
-        )
+        response_payload = dict(gate_result.response_payload or {})
+        if transcript:
+            response_payload["transcript"] = transcript
         log_whatsapp_menu_event(
             log_event,
             message_sid=message_sid,
             user_id=whatsapp_number,
             channel=input_channel,
         )
-        return WhatsAppMenuResult(handled=True, response_payload=response)
+        return WhatsAppMenuResult(
+            handled=True,
+            response_payload=response_payload,
+        )
 
     def _route_menu_option(
         self,

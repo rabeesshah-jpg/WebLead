@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
-from apps.qualification.conversation_state import get_accepted_fields
 from apps.qualification.domain.language_picker_pending import language_picker_pending_timeout
 from apps.qualification.domain.language_selection import LANGUAGE_ENGLISH
 from apps.qualification.domain.validators import normalize_whatsapp_session_number
@@ -24,6 +25,14 @@ FRESH_SESSION_DEFAULTS: dict[str, object] = {
     "last_message_at": None,
     "human_handoff_requested_at": None,
     "booking_link_sent_at": None,
+    "qualified_at": None,
+    "existing_customer_connecting_sent_at": None,
+    "existing_customer_followup_due_at": None,
+    "existing_customer_noura_sent_at": None,
+    "existing_customer_followup_sent_at": None,
+    "existing_customer_business_type_picker_sent_at": None,
+    "accepted_fields": {},
+    "conversation_cycle": 1,
     "onboarding_intro_sent": False,
     "last_onboarding_intro_at": None,
 }
@@ -45,19 +54,23 @@ def get_or_create_conversation_session(
     """
     Return an existing session or create a fresh isolated row for this number.
 
-    When Redis already holds qualification progress for this number, treat the
-    customer as an existing English conversation so migrated in-flight leads are
-    not prompted for language again.
+    When the fast overlay already holds qualification progress for this number,
+    treat the customer as an existing English conversation so migrated in-flight
+    leads are not prompted for language again.
     """
+    from apps.qualification.persistence.backends import get_persistence_backend
+
     canonical_number = normalize_whatsapp_session_number(whatsapp_number)
     session, created = WhatsAppConversationSession.objects.get_or_create(
         whatsapp_number=canonical_number,
         defaults=FRESH_SESSION_DEFAULTS,
     )
-    if created and session.language is None and get_accepted_fields(canonical_number):
-        session.language = LANGUAGE_ENGLISH
-        session.onboarding_intro_sent = True
-        session.save(update_fields=["language", "onboarding_intro_sent"])
+    if created and session.language is None:
+        overlay_fields = get_persistence_backend().get_conversation_fields(canonical_number)
+        if overlay_fields:
+            session.language = LANGUAGE_ENGLISH
+            session.onboarding_intro_sent = True
+            session.save(update_fields=["language", "onboarding_intro_sent"])
     return session, created
 
 
@@ -70,6 +83,28 @@ def persist_selected_language(
         locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
         locked.language = language
         locked.language_selected_at = timezone.now()
+        locked.awaiting_language_reselection = False
+        locked.language_picker_pending_until = None
+        locked.save(
+            update_fields=[
+                "language",
+                "language_selected_at",
+                "awaiting_language_reselection",
+                "language_picker_pending_until",
+            ],
+        )
+    session.refresh_from_db()
+    return session
+
+
+def clear_session_language(
+    session: WhatsAppConversationSession,
+) -> WhatsAppConversationSession:
+    """Clear language so the next turn must run the language-selection gate."""
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.language = None
+        locked.language_selected_at = None
         locked.awaiting_language_reselection = False
         locked.language_picker_pending_until = None
         locked.save(
@@ -162,14 +197,212 @@ def mark_booking_link_sent(
     *,
     now=None,
 ) -> WhatsAppConversationSession:
-    """Record that the booking link WhatsApp text was delivered for this session."""
+    """Record that the booking link WhatsApp text was delivered for this session.
+
+    Also stamps the durable ``qualified_at`` marker (once) so returning customers
+    are auto-detected as existing even after booking-link / idle-reset clears.
+    """
     current = now or timezone.now()
     with transaction.atomic():
         locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
         locked.booking_link_sent_at = current
-        locked.save(update_fields=["booking_link_sent_at"])
+        update_fields = ["booking_link_sent_at"]
+        if locked.qualified_at is None:
+            locked.qualified_at = current
+            update_fields.append("qualified_at")
+        locked.save(update_fields=update_fields)
     session.refresh_from_db()
     return session
+
+
+def clear_existing_customer_live_agent_state(
+    session: WhatsAppConversationSession,
+) -> WhatsAppConversationSession:
+    """Clear connecting/follow-up markers when a conversation cycle restarts."""
+    if (
+        session.existing_customer_connecting_sent_at is None
+        and session.existing_customer_followup_due_at is None
+        and session.existing_customer_noura_sent_at is None
+        and session.existing_customer_followup_sent_at is None
+        and session.existing_customer_business_type_picker_sent_at is None
+    ):
+        return session
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.existing_customer_connecting_sent_at = None
+        locked.existing_customer_followup_due_at = None
+        locked.existing_customer_noura_sent_at = None
+        locked.existing_customer_followup_sent_at = None
+        locked.existing_customer_business_type_picker_sent_at = None
+        locked.save(
+            update_fields=[
+                "existing_customer_connecting_sent_at",
+                "existing_customer_followup_due_at",
+                "existing_customer_noura_sent_at",
+                "existing_customer_followup_sent_at",
+                "existing_customer_business_type_picker_sent_at",
+            ],
+        )
+    session.refresh_from_db()
+    return session
+
+
+def bump_conversation_cycle(
+    session: WhatsAppConversationSession,
+) -> WhatsAppConversationSession:
+    """Advance the conversation cycle id for a fresh qualification attempt."""
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.conversation_cycle = int(locked.conversation_cycle or 1) + 1
+        locked.accepted_fields = {}
+        locked.save(update_fields=["conversation_cycle", "accepted_fields"])
+    session.refresh_from_db()
+    return session
+
+
+def persist_accepted_fields_to_session(
+    *,
+    whatsapp_number: str,
+    accepted_fields: dict,
+) -> WhatsAppConversationSession:
+    """Persist qualification accepted_fields to the durable session row."""
+    canonical_number = normalize_whatsapp_session_number(whatsapp_number)
+    session, _ = get_or_create_conversation_session(whatsapp_number=canonical_number)
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.accepted_fields = dict(accepted_fields)
+        locked.save(update_fields=["accepted_fields"])
+    session.refresh_from_db()
+    return session
+
+
+def load_accepted_fields_from_session(whatsapp_number: str) -> dict:
+    """Return durable accepted_fields from the session row (empty dict if none)."""
+    canonical_number = normalize_whatsapp_session_number(whatsapp_number)
+    session = WhatsAppConversationSession.objects.filter(
+        whatsapp_number=canonical_number,
+    ).first()
+    if session is None:
+        return {}
+    raw = session.accepted_fields
+    if isinstance(raw, dict):
+        return dict(raw)
+    return {}
+
+
+def clear_session_accepted_fields(
+    session: WhatsAppConversationSession,
+) -> WhatsAppConversationSession:
+    """Clear durable accepted_fields for the current conversation cycle."""
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        locked.accepted_fields = {}
+        locked.save(update_fields=["accepted_fields"])
+    session.refresh_from_db()
+    return session
+
+
+def claim_existing_customer_connecting(
+    session: WhatsAppConversationSession,
+    *,
+    followup_delay_seconds: int,
+    now=None,
+) -> tuple[WhatsAppConversationSession, bool]:
+    """
+    Persist connecting-message state once per conversation cycle.
+
+    Returns ``(session, claimed)`` where ``claimed`` is True only on the first
+    successful claim so delayed jobs are scheduled exactly once.
+    """
+    current = now or timezone.now()
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        if locked.existing_customer_connecting_sent_at is not None:
+            session.refresh_from_db()
+            return session, False
+        locked.existing_customer_connecting_sent_at = current
+        locked.existing_customer_followup_due_at = current + timedelta(
+            seconds=max(0, int(followup_delay_seconds)),
+        )
+        locked.existing_customer_noura_sent_at = None
+        locked.existing_customer_followup_sent_at = None
+        locked.existing_customer_business_type_picker_sent_at = None
+        locked.save(
+            update_fields=[
+                "existing_customer_connecting_sent_at",
+                "existing_customer_followup_due_at",
+                "existing_customer_noura_sent_at",
+                "existing_customer_followup_sent_at",
+                "existing_customer_business_type_picker_sent_at",
+            ],
+        )
+    session.refresh_from_db()
+    return session, True
+
+
+def claim_existing_customer_noura_send(
+    session: WhatsAppConversationSession,
+    *,
+    now=None,
+) -> tuple[WhatsAppConversationSession, bool]:
+    """Claim the Noura welcome send exactly once (before Business Type list picker)."""
+    current = now or timezone.now()
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        if locked.existing_customer_noura_sent_at is not None:
+            session.refresh_from_db()
+            return session, False
+        locked.existing_customer_noura_sent_at = current
+        locked.save(update_fields=["existing_customer_noura_sent_at"])
+    session.refresh_from_db()
+    return session, True
+
+
+def claim_existing_customer_business_type_picker_send(
+    session: WhatsAppConversationSession,
+    *,
+    now=None,
+) -> tuple[WhatsAppConversationSession, bool]:
+    """Claim the Business Type list-picker send exactly once."""
+    current = now or timezone.now()
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        if locked.existing_customer_business_type_picker_sent_at is not None:
+            session.refresh_from_db()
+            return session, False
+        if locked.existing_customer_noura_sent_at is None:
+            session.refresh_from_db()
+            return session, False
+        locked.existing_customer_business_type_picker_sent_at = current
+        locked.save(update_fields=["existing_customer_business_type_picker_sent_at"])
+    session.refresh_from_db()
+    return session, True
+
+
+def claim_existing_customer_followup_send(
+    session: WhatsAppConversationSession,
+    *,
+    now=None,
+) -> tuple[WhatsAppConversationSession, bool]:
+    """
+    Claim completion of the existing-customer Noura follow-up once.
+
+    Call after the connecting message was claimed and the Noura WhatsApp text
+    send succeeds. Does not require a Business Type list-picker send.
+    """
+    current = now or timezone.now()
+    with transaction.atomic():
+        locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
+        if locked.existing_customer_followup_sent_at is not None:
+            session.refresh_from_db()
+            return session, False
+        if locked.existing_customer_connecting_sent_at is None:
+            session.refresh_from_db()
+            return session, False
+        locked.existing_customer_followup_sent_at = current
+        locked.save(update_fields=["existing_customer_followup_sent_at"])
+    session.refresh_from_db()
+    return session, True
 
 
 def mark_onboarding_intro_sent(

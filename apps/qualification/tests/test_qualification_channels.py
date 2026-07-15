@@ -170,9 +170,12 @@ def test_voice_note_input_returns_reply_mode_voice_and_transcript(
     body = second.json()
     assert body["reply_mode"] == "voice"
     assert body["should_send_audio"] is True
-    assert body["should_send_text"] is False
+    # Booking link URL must still go out as text on voice completion.
+    assert body["should_send_text"] is True
     assert body["transcript"] == "Facebook"
-    assert body["next_field"] == "whatsapp_confirmed"
+    assert body["next_field"] is None
+    assert body["qualification_status"] == "completed"
+    assert BOOKING_LINK in body["reply_text"]
     mock_download.assert_called_once_with(MEDIA_URL)
     mock_transcribe.assert_called_once_with(
         MOCK_VOICE_AUDIO_BYTES,

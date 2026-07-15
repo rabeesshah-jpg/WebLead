@@ -39,10 +39,14 @@ MENU_SETTINGS = {
     "LEAD_QUALIFICATION_ENABLED": True,
     "WHATSAPP_MENU_INACTIVITY_SECONDS": 600,
     "WHATSAPP_MENU_PENDING_SECONDS": 600,
+    # Keep qualification idle reset above menu inactivity so these tests isolate
+    # menu behavior without wiping language / accepted fields.
+    "SESSION_IDLE_RESET_SECONDS": 7200,
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
 }
 
 IN_PROGRESS_FIELDS = {
+    "customer_type": "new_customer",
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
     "referral_source": "Google",
@@ -50,9 +54,18 @@ IN_PROGRESS_FIELDS = {
     "preferred_phone": VALID_WHATSAPP_NUMBER,
 }
 
+# Mid-flow: waiting on referral_source (used by menu continue).
 PARTIAL_FIELDS = {
+    "customer_type": "new_customer",
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
+}
+
+# Mid-flow: waiting on free-text requirements (uses OpenRouter extract).
+WAITING_FOR_REQUIREMENTS_FIELDS = {
+    "customer_type": "new_customer",
+    "referral_source": "Google",
+    "project_type": "new_website",
 }
 
 
@@ -134,7 +147,7 @@ def _reset_state():
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_active_user_within_inactivity_window_continues_normal_flow(mock_extract, client):
     _seed_session(last_message_at=timezone.now())
-    save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, WAITING_FOR_REQUIREMENTS_FIELDS)
     mock_extract.return_value = QualificationFieldFilterResult(
         accepted_fields={"requirements": "Need online ordering"},
         rejected_fields=(),
@@ -170,12 +183,12 @@ def test_inactive_user_inbound_does_not_auto_open_menu(
         human_handoff_requested=False,
     )
     _seed_session(last_message_at=_inactive_last_message_at())
-    save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, WAITING_FOR_REQUIREMENTS_FIELDS)
 
     response = _post_extract(
         client,
         _text_payload(
-            message="Hello again",
+            message="We also need a reservation form",
             message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea7",
         ),
     )
@@ -183,14 +196,14 @@ def test_inactive_user_inbound_does_not_auto_open_menu(
 
     assert response.status_code == 200
     assert body.get("status") != "awaiting_menu_selection"
+    assert body.get("status") != "awaiting_language_selection"
     mock_send_menu.assert_not_called()
     mock_extract.assert_called_once()
     # 10 minutes idle is below the 2-hour welcome-back threshold.
     welcome = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_welcome_back")
     assert welcome not in body["reply_text"]
-    assert get_accepted_fields(VALID_WHATSAPP_NUMBER)["requirements"] == (
-        "A restaurant website with online ordering"
-    )
+    # Still waiting for requirements (empty extract acceptances leave prior state).
+    assert "requirements" not in get_accepted_fields(VALID_WHATSAPP_NUMBER)
 
 
 @override_settings(**MENU_SETTINGS)
@@ -234,8 +247,8 @@ def test_menu_button_payload_menu_restart_clears_state(mock_send_menu: MagicMock
 
     assert response.status_code == 200
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == {}
-    assert body["next_field"] == "project_type"
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ENGLISH, key="restart_intro")
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language is None
 
 
 @override_settings(**MENU_SETTINGS)
@@ -328,7 +341,8 @@ def test_direct_restart_restarts_immediately(client):
 
     assert response.status_code == 200
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == {}
-    assert body["next_field"] == "project_type"
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language is None
 
 
 @override_settings(**MENU_SETTINGS)
@@ -349,13 +363,14 @@ def test_voice_transcript_after_inactivity_does_not_auto_open_menu(
         human_handoff_requested=False,
     )
     _seed_session(last_message_at=_inactive_last_message_at())
-    save_accepted_fields(VALID_WHATSAPP_NUMBER, PARTIAL_FIELDS)
+    save_accepted_fields(VALID_WHATSAPP_NUMBER, WAITING_FOR_REQUIREMENTS_FIELDS)
 
     response = _post_extract(client, _voice_payload(message_sid="SM0cc5a1d9e22bf9850ca24261ee23ceb3"))
     body = response.json()
 
     assert response.status_code == 200
     assert body.get("status") != "awaiting_menu_selection"
+    assert body.get("status") != "awaiting_language_selection"
     mock_send_menu.assert_not_called()
     mock_transcribe.assert_called_once()
     welcome_voice = get_customer_message(
@@ -367,7 +382,7 @@ def test_voice_transcript_after_inactivity_does_not_auto_open_menu(
 
 
 @override_settings(**MENU_SETTINGS)
-def test_language_is_preserved_after_restart(client):
+def test_language_is_cleared_after_restart(client):
     _seed_session(language=LANGUAGE_ARABIC)
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
@@ -377,8 +392,8 @@ def test_language_is_preserved_after_restart(client):
     )
     body = response.json()
 
-    assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language == LANGUAGE_ARABIC
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language is None
 
 
 @override_settings(**MENU_SETTINGS)

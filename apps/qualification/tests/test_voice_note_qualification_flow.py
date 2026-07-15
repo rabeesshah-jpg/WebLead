@@ -152,7 +152,7 @@ def test_voice_ecommerce_captures_requirements_and_asks_referral(
 @patch("apps.qualification.core.legacy_compat.download_twilio_media", return_value=MOCK_VOICE_AUDIO_DOWNLOAD)
 @patch("apps.qualification.core.legacy_compat.transcribe_audio")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_voice_referral_captures_source_and_asks_contact_confirmation(
+def test_voice_referral_captures_source_and_completes_without_confirmation(
     mock_extract,
     mock_transcribe,
     mock_download,
@@ -181,10 +181,14 @@ def test_voice_referral_captures_source_and_asks_contact_confirmation(
 
     assert response.status_code == 200
     assert body["accepted_fields"]["referral_source"] == "My friend told me"
-    assert body["next_field"] == "whatsapp_confirmed"
+    assert body["next_field"] is None
+    assert body["qualification_status"] == "completed"
     assert body["should_send_audio"] is True
-    assert body["should_send_text"] is False
-    assert "best contact number" in body["spoken_text"]
+    assert body["should_send_text"] is True
+    assert BOOKING_LINK in body["reply_text"]
+    assert BOOKING_LINK not in body["spoken_text"]
+    assert "best contact number" not in body["spoken_text"]
+    assert body["booking_link_sent"] is True
     mock_extract.assert_called_once()
 
 

@@ -159,8 +159,11 @@ def test_picker_send_failure_does_not_set_pending_state(mock_extract, mock_send_
 
     response = _post_extract(client, _text_payload(message="/language", message_sid=CHANGE_MESSAGE_SID))
 
-    assert response.status_code == 502
+    assert response.status_code == 200
+    body = response.json()
+    assert "choose your language" in body["reply_text"].lower()
     session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
+    assert session.language == LANGUAGE_ENGLISH
     assert session.language_picker_pending_until is None
     mock_extract.assert_not_called()
 

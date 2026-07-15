@@ -542,13 +542,16 @@ def test_endpoint_default_strips_unasked_phone_fields_for_restaurant_regression(
     assert body["accepted_fields"]["project_type"] == "new_website"
     assert body["accepted_fields"]["requirements"] == "I need a new website for my restaurant"
     assert body["accepted_fields"]["referral_source"] == "Facebook"
-    assert "whatsapp_confirmed" not in body["accepted_fields"]
-    assert "preferred_phone" not in body["accepted_fields"]
+    # The extraction guard still strips model-provided phone fields...
     assert body["rejected_fields"]["whatsapp_confirmed"] == "value_missing"
     assert body["rejected_fields"]["preferred_phone"] == "value_missing"
-    assert body["next_field"] == "whatsapp_confirmed"
-    assert body["reply_text"] == "Thank you. Is this WhatsApp number the best number to reach you?"
-    assert body["qualification_status"] == "in_progress"
+    # ...but the three required fields complete qualification, and the contact
+    # number is filled internally from the inbound WhatsApp number.
+    assert body["accepted_fields"]["whatsapp_confirmed"] is True
+    assert body["accepted_fields"]["preferred_phone"] == VALID_WHATSAPP_NUMBER
+    assert body["next_field"] is None
+    assert "best number to reach you" not in body["reply_text"]
+    assert body["qualification_status"] == "completed"
 
 
 N8N_TEXT_PAYLOAD = {

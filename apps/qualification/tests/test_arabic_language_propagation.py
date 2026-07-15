@@ -9,7 +9,7 @@ import pytest
 from django.test import Client, override_settings
 from django.utils import timezone
 
-from apps.qualification.conversation_flow import QUESTIONS, build_turn_response
+from apps.qualification.conversation_flow import build_turn_response
 from apps.qualification.conversation_state import clear_conversations, save_accepted_fields
 from apps.qualification.domain.language_selection import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
 from apps.qualification.domain.messages import get_customer_message
@@ -27,12 +27,12 @@ pytestmark = [pytest.mark.language_gate, pytest.mark.django_db]
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 VALID_WHATSAPP_NUMBER = "+923001234567"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
-ARABIC_FIRST_QUESTION = "ما نوع الموقع الإلكتروني الذي تحتاجه؟"
-
-
-def _with_onboarding_intro(*, language: str, question: str) -> str:
-    intro = get_customer_message(language=language, key="onboarding_intro")
-    return f"{intro}\n\n{question}"
+NEW_CUSTOMER_REFERRAL_EN = get_customer_message(
+    language=LANGUAGE_ENGLISH, key="referral_source_new_customer_intro"
+)
+NEW_CUSTOMER_REFERRAL_AR = get_customer_message(
+    language=LANGUAGE_ARABIC, key="referral_source_new_customer_intro"
+)
 
 LANGUAGE_PICKER_SETTINGS = {
     "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
@@ -103,10 +103,9 @@ def test_lang_ar_starts_with_arabic_first_question(mock_extract, mock_send_picke
 
     body = response.json()
     assert response.status_code == 200
-    assert body["reply_text"] == _with_onboarding_intro(
-        language=LANGUAGE_ARABIC,
-        question=ARABIC_FIRST_QUESTION,
-    )
+    assert body["reply_text"] == NEW_CUSTOMER_REFERRAL_AR
+    assert body["next_field"] == "referral_source"
+    assert body["accepted_fields"]["customer_type"] == "new_customer"
     assert body["conversation_language"] == LANGUAGE_ARABIC
     mock_extract.assert_not_called()
     mock_send_picker.assert_not_called()
@@ -123,10 +122,9 @@ def test_lang_en_starts_with_existing_english_first_question(mock_extract, mock_
 
     body = response.json()
     assert response.status_code == 200
-    assert body["reply_text"] == _with_onboarding_intro(
-        language=LANGUAGE_ENGLISH,
-        question=QUESTIONS["project_type"],
-    )
+    assert body["reply_text"] == NEW_CUSTOMER_REFERRAL_EN
+    assert body["next_field"] == "referral_source"
+    assert body["accepted_fields"]["customer_type"] == "new_customer"
     assert body["conversation_language"] == LANGUAGE_ENGLISH
     mock_extract.assert_not_called()
 
@@ -140,15 +138,21 @@ def test_lang_en_starts_with_existing_english_first_question(mock_extract, mock_
 ))
 def test_arabic_qualification_turn_includes_conversation_language(mock_extract, mock_send_picker, client):
     _arabic_session()
+    save_accepted_fields(
+        VALID_WHATSAPP_NUMBER,
+        {
+            "customer_type": "new_customer",
+            "referral_source": "google",
+        },
+    )
 
     response = _post_extract(client, _text_payload(message="أحتاج موقعًا جديدًا"))
 
     body = response.json()
     assert response.status_code == 200
     assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ARABIC, key="requirements")
-    mock_extract.assert_called_once()
-    assert mock_extract.call_args.kwargs["conversation_language"] == LANGUAGE_ARABIC
+    assert get_customer_message(language=LANGUAGE_ARABIC, key="requirements") in body["reply_text"]
+    mock_extract.assert_not_called()
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
@@ -164,13 +168,19 @@ def test_english_qualification_turn_includes_conversation_language(mock_extract,
         language=LANGUAGE_ENGLISH,
         language_selected_at=timezone.now(),
     )
+    save_accepted_fields(
+        VALID_WHATSAPP_NUMBER,
+        {
+            "customer_type": "existing_customer",
+        },
+    )
 
     response = _post_extract(client, _text_payload(message="I need a new website"))
 
     body = response.json()
     assert response.status_code == 200
     assert body["conversation_language"] == LANGUAGE_ENGLISH
-    assert "Thank you, I've noted that." in body["reply_text"]
+    assert get_customer_message(language=LANGUAGE_ENGLISH, key="requirements") in body["reply_text"]
     mock_extract.assert_not_called()
 
 
@@ -196,18 +206,20 @@ def test_build_turn_response_keeps_structured_keys_in_english_for_arabic():
         language=LANGUAGE_ARABIC,
     )
     assert response["accepted_fields"]["project_type"] == "new_website"
-    assert response["next_field"] == "requirements"
+    assert response["next_field"] == "customer_type"
     assert response["conversation_language"] == LANGUAGE_ARABIC
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
 @patch("apps.qualification.services.language_gate_service.send_language_picker")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_arabic_invalid_phone_response_is_arabic(mock_extract, mock_send_picker, client):
+def test_arabic_old_phone_confirmation_session_completes_in_arabic(mock_extract, mock_send_picker, client):
+    # Backward compat: an old session left mid phone-confirmation is now complete.
     _arabic_session()
     save_accepted_fields(
         VALID_WHATSAPP_NUMBER,
         {
+            "customer_type": "new_customer",
             "project_type": "new_website",
             "requirements": "موقع مطعم",
             "referral_source": "إنستغرام",
@@ -215,18 +227,19 @@ def test_arabic_invalid_phone_response_is_arabic(mock_extract, mock_send_picker,
         },
     )
 
-    response = _post_extract(client, _text_payload(message="رقم غير صحيح"))
+    response = _post_extract(client, _text_payload(message="مرحبا"))
 
     body = response.json()
     assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ARABIC, key="invalid_phone")
+    assert body["qualification_status"] == "completed"
+    assert body["reply_text"] != get_customer_message(language=LANGUAGE_ARABIC, key="invalid_phone")
     mock_extract.assert_not_called()
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
 @patch("apps.qualification.services.language_gate_service.send_language_picker")
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_english_invalid_phone_response_remains_english(mock_extract, mock_send_picker, client):
+def test_english_old_phone_confirmation_session_completes_in_english(mock_extract, mock_send_picker, client):
     WhatsAppConversationSession.objects.create(
         whatsapp_number=VALID_WHATSAPP_NUMBER,
         language=LANGUAGE_ENGLISH,
@@ -235,6 +248,7 @@ def test_english_invalid_phone_response_remains_english(mock_extract, mock_send_
     save_accepted_fields(
         VALID_WHATSAPP_NUMBER,
         {
+            "customer_type": "new_customer",
             "project_type": "new_website",
             "requirements": "restaurant website",
             "referral_source": "Instagram",
@@ -242,11 +256,12 @@ def test_english_invalid_phone_response_remains_english(mock_extract, mock_send_
         },
     )
 
-    response = _post_extract(client, _text_payload(message="not a phone"))
+    response = _post_extract(client, _text_payload(message="hello"))
 
     body = response.json()
     assert body["conversation_language"] == LANGUAGE_ENGLISH
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ENGLISH, key="invalid_phone")
+    assert body["qualification_status"] == "completed"
+    assert body["reply_text"] != get_customer_message(language=LANGUAGE_ENGLISH, key="invalid_phone")
     mock_extract.assert_not_called()
 
 
@@ -255,12 +270,20 @@ def test_english_invalid_phone_response_remains_english(mock_extract, mock_send_
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter", return_value=QualificationFieldFilterResult(
     accepted_fields={},
     rejected_fields=(
-        RejectedQualificationField(field_name="project_type", reason="confidence below threshold"),
+        RejectedQualificationField(field_name="requirements", reason="confidence below threshold"),
     ),
     human_handoff_requested=False,
 ))
 def test_arabic_generic_retry_response_is_arabic(mock_extract, mock_send_picker, client):
     _arabic_session()
+    save_accepted_fields(
+        VALID_WHATSAPP_NUMBER,
+        {
+            "customer_type": "new_customer",
+            "referral_source": "google",
+            "project_type": "new_website",
+        },
+    )
 
     response = _post_extract(client, _text_payload(message="غير واضح"))
 
@@ -278,6 +301,14 @@ def test_arabic_generic_retry_response_is_arabic(mock_extract, mock_send_picker,
 ))
 def test_arabic_human_handoff_response_is_arabic(mock_extract, mock_send_picker, client):
     _arabic_session()
+    save_accepted_fields(
+        VALID_WHATSAPP_NUMBER,
+        {
+            "customer_type": "new_customer",
+            "referral_source": "google",
+            "project_type": "new_website",
+        },
+    )
 
     response = _post_extract(client, _text_payload(message="أريد التحدث مع شخص"))
 
@@ -322,6 +353,7 @@ def test_arabic_completion_response_is_arabic(mock_extract, mock_send_picker, cl
     save_accepted_fields(
         VALID_WHATSAPP_NUMBER,
         {
+            "customer_type": "new_customer",
             "project_type": "new_website",
             "requirements": "موقع مطعم",
             "referral_source": "إنستغرام",

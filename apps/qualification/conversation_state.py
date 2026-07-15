@@ -1,4 +1,8 @@
-"""Qualification conversation state keyed by WhatsApp number."""
+"""Qualification conversation state keyed by WhatsApp number.
+
+Fast overlay: Redis or process-local memory (tests/dev).
+Durable source of truth for the active cycle: ``WhatsAppConversationSession.accepted_fields``.
+"""
 
 from __future__ import annotations
 
@@ -16,17 +20,37 @@ def _canonical_whatsapp_number(whatsapp_number: str) -> str:
 
 
 def get_accepted_fields(whatsapp_number: str) -> dict[str, Any]:
-    """Return a copy of persisted accepted fields for a conversation."""
-    return get_persistence_backend().get_conversation_fields(
-        _canonical_whatsapp_number(whatsapp_number),
+    """Return accepted fields, hydrating from the durable DB session when needed."""
+    canonical = _canonical_whatsapp_number(whatsapp_number)
+    cached = get_persistence_backend().get_conversation_fields(canonical)
+    if cached:
+        return cached
+
+    from apps.qualification.services.conversation_session_service import (
+        load_accepted_fields_from_session,
     )
+
+    durable = load_accepted_fields_from_session(canonical)
+    if durable:
+        # Warm the fast overlay so subsequent reads in this process stay cheap.
+        get_persistence_backend().save_conversation_fields(canonical, durable)
+        return dict(durable)
+    return {}
 
 
 def save_accepted_fields(whatsapp_number: str, accepted_fields: dict[str, Any]) -> None:
-    """Persist accepted fields for a conversation."""
-    get_persistence_backend().save_conversation_fields(
-        _canonical_whatsapp_number(whatsapp_number),
-        accepted_fields,
+    """Persist accepted fields to the fast overlay and durable session row."""
+    canonical = _canonical_whatsapp_number(whatsapp_number)
+    payload = dict(accepted_fields)
+    get_persistence_backend().save_conversation_fields(canonical, payload)
+
+    from apps.qualification.services.conversation_session_service import (
+        persist_accepted_fields_to_session,
+    )
+
+    persist_accepted_fields_to_session(
+        whatsapp_number=canonical,
+        accepted_fields=payload,
     )
 
 
@@ -73,11 +97,18 @@ def clear_conversations() -> None:
 
 
 def clear_conversation_for_customer(whatsapp_number: str) -> None:
-    """Clear persisted qualification fields and history for one customer."""
+    """Clear persisted qualification fields and history for one customer cycle."""
     canonical_number = _canonical_whatsapp_number(whatsapp_number)
     get_persistence_backend().clear_conversation_for_customer(canonical_number)
+
     from apps.qualification.services.booking_link_delivery_service import (
         clear_booking_link_sent_for_customer,
     )
+    from apps.qualification.services.conversation_session_service import (
+        bump_conversation_cycle,
+        get_or_create_conversation_session,
+    )
 
     clear_booking_link_sent_for_customer(whatsapp_number=canonical_number)
+    session, _ = get_or_create_conversation_session(whatsapp_number=canonical_number)
+    bump_conversation_cycle(session)

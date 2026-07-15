@@ -31,3 +31,13 @@ def test_post_booking_exit_reply():
 def test_post_booking_resend_request_reply():
     reply = build_post_booking_link_reply(message="Send link again", language="en")
     assert "already shared above" in reply
+
+
+def test_post_booking_default_reply_matches_contract():
+    reply = build_post_booking_link_reply(message="", language="en")
+    assert reply == "Please use the booking link above whenever you're ready."
+
+
+def test_post_booking_default_reply_arabic_matches_contract():
+    reply = build_post_booking_link_reply(message="", language="ar")
+    assert reply == "يرجى استخدام رابط الحجز أعلاه عندما تكون جاهزًا."

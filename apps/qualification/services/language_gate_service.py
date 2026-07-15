@@ -20,6 +20,7 @@ from apps.qualification.domain.language_picker_pending import resolve_pending_pi
 from apps.qualification.domain.language_selection import (
     LANGUAGE_ENGLISH,
     normalize_conversation_language,
+    resolve_explicit_language_switch,
     resolve_selected_language,
 )
 from apps.qualification.domain.messages import (
@@ -33,6 +34,7 @@ from apps.qualification.integrations.twilio_language_picker import (
 )
 from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.services.conversation_session_service import (
+    clear_session_language,
     get_or_create_conversation_session,
     mark_session_language_picker_pending,
     persist_selected_language,
@@ -137,6 +139,19 @@ def build_qualification_step_response(
             "conversation_language": normalized_language,
         }
 
+    if next_field == "customer_type":
+        from apps.qualification.services.existing_customer_detection import (
+            maybe_auto_detect_existing_customer,
+        )
+
+        auto_detected = maybe_auto_detect_existing_customer(
+            whatsapp_number=whatsapp_number,
+            language=normalized_language,
+            input_channel="whatsapp_text",
+        )
+        if auto_detected is not None:
+            return auto_detected
+
     return {
         "accepted_fields": persisted_fields,
         "rejected_fields": {},
@@ -144,7 +159,7 @@ def build_qualification_step_response(
         "next_field": next_field,
         "reply_text": get_qualification_question(
             language=normalized_language,
-            field=next_field or "project_type",
+            field=next_field or "referral_source",
         ),
         "qualification_status": "in_progress",
         "preferred_phone": persisted_fields.get("preferred_phone"),
@@ -175,9 +190,25 @@ def build_language_change_continuation_response(
             "conversation_language": normalized_language,
         }
 
+    if next_field == "customer_type":
+        from apps.qualification.services.existing_customer_detection import (
+            maybe_auto_detect_existing_customer,
+        )
+
+        auto_detected = maybe_auto_detect_existing_customer(
+            whatsapp_number=whatsapp_number,
+            language=normalized_language,
+            input_channel="whatsapp_text",
+        )
+        if auto_detected is not None:
+            auto_detected["reply_text"] = (
+                f"{confirmation}\n\n{auto_detected.get('reply_text', '')}"
+            )
+            return auto_detected
+
     question = get_qualification_question(
         language=normalized_language,
-        field=next_field or "project_type",
+        field=next_field or "referral_source",
     )
     return {
         "accepted_fields": persisted_fields,
@@ -195,6 +226,77 @@ def format_whatsapp_recipient_address(whatsapp_number: str) -> str:
     if whatsapp_number.startswith("whatsapp:"):
         return whatsapp_number
     return f"whatsapp:{whatsapp_number}"
+
+
+def _whatsapp_number_prefix(whatsapp_number: str) -> str:
+    return (whatsapp_number or "")[:6]
+
+
+def build_language_gate_send_fallback(
+    *,
+    session: WhatsAppConversationSession,
+    whatsapp_number: str,
+    validated_data: dict[str, Any],
+    message_sid: str | None,
+    input_channel: str,
+) -> LanguageGateResult:
+    """
+    Continue qualification when the Twilio language picker cannot be sent.
+
+    New users fall back to default English onboarding. Existing users receive
+    text instructions for choosing a language so n8n can still deliver a reply.
+    """
+    new_user = session.language is None
+    _log_language_gate_event(
+        "language_gate_fallback_used",
+        whatsapp_number=whatsapp_number,
+        whatsapp_number_prefix=_whatsapp_number_prefix(whatsapp_number),
+        message_sid=message_sid,
+        input_channel=input_channel,
+        new_user=new_user,
+        fallback_to_default_language=new_user,
+    )
+
+    if new_user:
+        persist_selected_language(session, LANGUAGE_ENGLISH)
+        session.refresh_from_db()
+        response = LanguageGateService._start_qualification_flow(
+            whatsapp_number=whatsapp_number,
+            validated_data=validated_data,
+            user_message=validated_data.get("message") or "",
+            language=LANGUAGE_ENGLISH,
+        )
+        response["language_gate_fallback_used"] = True
+        return LanguageGateResult(handled=True, response_payload=response)
+
+    current_language = normalize_conversation_language(session.language or LANGUAGE_ENGLISH)
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    next_field = get_active_next_field(persisted_fields)
+    qualification_status = (
+        "completed" if is_qualification_complete(persisted_fields) else "in_progress"
+    )
+    response = finalize_turn_response(
+        {
+            "accepted_fields": persisted_fields,
+            "rejected_fields": {},
+            "human_handoff_requested": False,
+            "next_field": next_field if qualification_status == "in_progress" else None,
+            "reply_text": (
+                "Please choose your language by replying English or العربية, "
+                "or send /language set en or /language set ar."
+            ),
+            "qualification_status": qualification_status,
+            "preferred_phone": persisted_fields.get("preferred_phone"),
+            "conversation_language": current_language,
+            "language_gate_fallback_used": True,
+        },
+        input_channel=validated_data["input_channel"],
+        transcript=None,
+        conversation_language=current_language,
+        whatsapp_number=whatsapp_number,
+        user_message=validated_data.get("message") or "",
+    )
+    return LanguageGateResult(handled=True, response_payload=response)
 
 
 def trigger_language_flow(
@@ -218,22 +320,22 @@ def trigger_language_flow(
     to_number = format_whatsapp_recipient_address(whatsapp_number)
     try:
         sender(to_number=to_number)
-    except TwilioLanguagePickerConfigurationError as exc:
+    except (TwilioLanguagePickerConfigurationError, Exception) as exc:
         _log_language_gate_event(
-            "language_selector_configuration_error",
+            "language_gate_send_failed",
             whatsapp_number=whatsapp_number,
+            whatsapp_number_prefix=_whatsapp_number_prefix(whatsapp_number),
             message_sid=message_sid,
+            input_channel=input_channel,
             error_type=type(exc).__name__,
         )
-        raise LanguageGateConfigurationError(str(exc)) from exc
-    except Exception as exc:
-        _log_language_gate_event(
-            "language_selector_send_failed",
+        return build_language_gate_send_fallback(
+            session=session,
             whatsapp_number=whatsapp_number,
+            validated_data=validated_data,
             message_sid=message_sid,
-            error_type=type(exc).__name__,
+            input_channel=input_channel,
         )
-        raise LanguageGateSendError("Twilio language picker send failed.") from exc
 
     mark_session_language_picker_pending(session)
     session.refresh_from_db()
@@ -273,8 +375,23 @@ class LanguageGateService:
         message_sid = validated_data.get("message_sid")
         now = timezone.now()
 
+        _log_language_gate_event(
+            "language_gate_started",
+            whatsapp_number=whatsapp_number,
+            whatsapp_number_prefix=_whatsapp_number_prefix(whatsapp_number),
+            message_sid=message_sid,
+            input_channel=input_channel,
+        )
+
         session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
         session.refresh_from_db()
+
+        # New conversations (no in-progress qualification fields) must always
+        # re-run language selection — including returning/existing customers whose
+        # previous language is still on the session row.
+        if session.language is not None and not get_accepted_fields(whatsapp_number):
+            clear_session_language(session)
+            session.refresh_from_db()
 
         language_command = parse_language_command(message)
         if language_command is not None:
@@ -314,6 +431,19 @@ class LanguageGateService:
                 via_button=False,
                 user_message=message or "",
             )
+
+        if session.language is not None:
+            explicit_language = resolve_explicit_language_switch(message)
+            if explicit_language is not None:
+                return self._handle_global_language_switch(
+                    session=session,
+                    whatsapp_number=whatsapp_number,
+                    validated_data=validated_data,
+                    message_sid=message_sid,
+                    input_channel=input_channel,
+                    new_language=explicit_language,
+                    user_message=message or "",
+                )
 
         if session.language is None:
             return trigger_language_flow(
@@ -395,6 +525,53 @@ class LanguageGateService:
             )
 
         return LanguageGateResult(handled=True, response_payload=response)
+
+    def _handle_global_language_switch(
+        self,
+        *,
+        session: WhatsAppConversationSession,
+        whatsapp_number: str,
+        validated_data: dict[str, Any],
+        message_sid: str | None,
+        input_channel: str,
+        new_language: str,
+        user_message: str,
+    ) -> LanguageGateResult:
+        """
+        Switch language when the customer types a language word mid-conversation.
+
+        Persists the new language and re-asks the current pending question in the
+        selected language (with the matching option template) without treating the
+        language word as an answer to referral_source, project_type, or requirements.
+        """
+        previous_language = normalize_conversation_language(session.language)
+        persisted_fields = get_accepted_fields(whatsapp_number)
+        state_before = get_active_next_field(persisted_fields)
+
+        result = self._apply_language_selection(
+            session=session,
+            whatsapp_number=whatsapp_number,
+            validated_data=validated_data,
+            message_sid=message_sid,
+            language=new_language,
+            via_button=False,
+            user_message=user_message,
+        )
+        response_payload = result.response_payload or {}
+        _log_language_gate_event(
+            "language_switch_detected",
+            whatsapp_number=whatsapp_number,
+            whatsapp_number_prefix=_whatsapp_number_prefix(whatsapp_number),
+            message_sid=message_sid,
+            input_channel=input_channel,
+            language_change_detected=True,
+            previous_conversation_language=previous_language,
+            new_conversation_language=new_language,
+            state_before=state_before,
+            state_after=response_payload.get("next_field"),
+            option_template=response_payload.get("option_template"),
+        )
+        return result
 
     def _handle_language_command(
         self,

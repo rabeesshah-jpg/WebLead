@@ -10,9 +10,14 @@ from apps.qualification.conversation_flow import (
 )
 
 _CONVERSATION_STATE_BY_FIELD: dict[str, str] = {
-    "project_type": "WAITING_FOR_PROJECT_TYPE",
-    "requirements": "WAITING_FOR_REQUIREMENTS",
+    "customer_type": "WAITING_FOR_CUSTOMER_TYPE",
     "referral_source": "WAITING_FOR_REFERRAL_SOURCE",
+    "business_type": "WAITING_FOR_BUSINESS_TYPE",
+    "website_status": "WAITING_FOR_WEBSITE_STATUS",
+    "paid_ads": "WAITING_FOR_PAID_ADS",
+    "main_goal": "WAITING_FOR_MAIN_GOAL",
+    "launch_timeline": "WAITING_FOR_LAUNCH_TIMELINE",
+    "requirements": "WAITING_FOR_REQUIREMENTS",
     "whatsapp_confirmed": "WAITING_FOR_WHATSAPP_CONFIRMATION",
     "preferred_phone": "WAITING_FOR_PREFERRED_PHONE",
 }
@@ -37,4 +42,4 @@ def resolve_conversation_state_label(
         )
     if is_qualification_complete(fields):
         return "QUALIFICATION_COMPLETE"
-    return "WAITING_FOR_PROJECT_TYPE"
+    return "WAITING_FOR_CUSTOMER_TYPE"

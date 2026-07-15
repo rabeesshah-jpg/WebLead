@@ -433,7 +433,7 @@ def test_message_after_sixty_one_seconds_preserves_state(
     body = response.json()
 
     assert response.status_code == 200
-    assert body["next_field"] == "whatsapp_confirmed"
+    assert body["next_field"] is None
     assert get_accepted_fields(WHATSAPP_NUMBER)["referral_source"] == "Facebook"
     intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
     assert intro not in body["reply_text"]
@@ -486,7 +486,7 @@ def test_voice_after_sixty_one_seconds_preserves_state(
 
     assert response.status_code == 200
     assert intro not in body["whatsapp_text"]
-    assert body["next_field"] == "whatsapp_confirmed"
+    assert body["next_field"] is None
     assert get_accepted_fields(WHATSAPP_NUMBER)["requirements"] == "restaurant website"
     mock_transcribe.assert_called_once()
     mock_extract.assert_not_called()

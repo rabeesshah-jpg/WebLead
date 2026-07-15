@@ -96,7 +96,7 @@ def test_services_question_answers_and_continues_current_question(mock_extract, 
     assert "SEO" in body["reply_text"]
     assert "new website" in body["reply_text"]
     assert "upgrade" in body["reply_text"]
-    assert body["next_field"] == "project_type"
+    assert body["next_field"] == "business_type"
     assert body["classification"] == ["user_question"]
     mock_extract.assert_not_called()
 
@@ -111,7 +111,7 @@ def test_location_question_answers_and_continues_current_question(mock_extract, 
     assert "work remotely" in body["reply_text"]
     assert "new website" in body["reply_text"]
     assert "upgrade" in body["reply_text"]
-    assert body["next_field"] == "project_type"
+    assert body["next_field"] == "business_type"
     assert "user_question" in body["classification"]
     mock_extract.assert_not_called()
 
@@ -197,38 +197,37 @@ def test_combined_requirement_and_location_question(mock_extract, client):
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_whatsapp_confirmation_services_question_reasks(mock_extract, client):
+def test_question_after_qualification_complete_returns_booking_link(mock_extract, client):
     _reach_whatsapp_confirmation(client)
 
     response = _post_text(client, "What services do you provide?")
 
     body = response.json()
     assert response.status_code == 200
-    assert "website design" in body["reply_text"]
-    assert "Also, is this WhatsApp number the best number to reach you?" in body["reply_text"]
-    assert body["next_field"] == "whatsapp_confirmed"
+    assert body["qualification_status"] == "completed"
+    assert body["next_field"] is None
+    assert "best number to reach you" not in body["reply_text"]
     mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_whatsapp_confirmation_requirement_saves_and_reasks(mock_extract, client):
+def test_requirement_after_qualification_complete_does_not_reask(mock_extract, client):
     _reach_whatsapp_confirmation(client)
 
     response = _post_text(client, "I need automation and SEO")
 
     body = response.json()
     assert response.status_code == 200
-    assert body["accepted_fields"]["services_required"] == ["automation", "seo"]
-    assert "I've noted that" in body["reply_text"]
-    assert "Please reply Yes or No" in body["reply_text"]
-    assert body["saved_services"] == ["automation", "seo"]
+    assert body["qualification_status"] == "completed"
+    assert body["next_field"] is None
+    assert "Please reply Yes or No" not in body["reply_text"]
     mock_extract.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
-def test_whatsapp_confirmation_yup_completes_without_reasking(mock_extract, client):
+def test_completed_session_returns_booking_without_reasking(mock_extract, client):
     _reach_whatsapp_confirmation(client)
 
     response = _post_text(client, "Yup")
@@ -236,10 +235,10 @@ def test_whatsapp_confirmation_yup_completes_without_reasking(mock_extract, clie
     body = response.json()
     assert response.status_code == 200
     assert body["accepted_fields"]["whatsapp_confirmed"] is True
+    assert body["accepted_fields"]["preferred_phone"] == WHATSAPP_NUMBER
     assert body["qualification_status"] == "completed"
-    assert body["complete"] is True
+    assert body["next_field"] is None
     assert "best number to reach you" not in body["reply_text"]
-    assert "yes_confirmation" in body["classification"]
     mock_extract.assert_not_called()
 
 

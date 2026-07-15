@@ -183,8 +183,27 @@ def ensure_booking_link_delivery_on_response(
 
     booking_link = resolve_booking_link()
     if booking_link and response_contains_booking_url(updated, booking_link=booking_link):
+        # The URL is already inline in reply_text. Persist delivery to the session
+        # (booking_link_sent_at + durable qualified_at via mark_booking_link_sent)
+        # so returning customers are auto-detected as existing. Previously this
+        # branch only flipped the response flag and left the session unstamped,
+        # which made existing-customer detection report detection_source=none.
+        session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
+        session.refresh_from_db()
+        if not booking_link_already_sent(session=session):
+            mark_booking_link_sent(session)
         updated["booking_link_sent"] = True
-        updated["conversation_state"] = updated.get("conversation_state") or "BOOKING_LINK_SENT"
+        updated["conversation_state"] = "BOOKING_LINK_SENT"
+        log_qualification_event(
+            "booking_link_sent",
+            whatsapp_number_prefix=whatsapp_number[:6],
+            message_sid=message_sid,
+            input_channel=input_channel,
+            conversation_state="BOOKING_LINK_SENT",
+            delivery="whatsapp_text_inline",
+            persisted_to_session=True,
+            booking_link_sent_after=True,
+        )
         return updated
 
     if not updated.get("send_booking_link"):

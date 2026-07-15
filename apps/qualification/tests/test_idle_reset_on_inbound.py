@@ -159,8 +159,14 @@ def test_idle_reset_triggers_at_or_above_threshold(
     assert body["inactivity_gap_seconds"] == gap_seconds
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
     assert ONBOARDING_INTRO in body["reply_text"]
-    assert "new website" in body["reply_text"].lower()
-    assert body.get("conversation_state") == "WAITING_FOR_PROJECT_TYPE"
+    assert "what best describes your business" in body["reply_text"].lower() or (
+        "how did you hear about us" in body["reply_text"].lower()
+    )
+    assert body.get("conversation_state") in {
+        "WAITING_FOR_BUSINESS_TYPE",
+        "WAITING_FOR_REFERRAL_SOURCE",
+        "WAITING_FOR_CUSTOMER_TYPE",
+    }
     mock_extract.assert_not_called()
 
 
@@ -178,7 +184,9 @@ def test_idle_reset_after_requirements_step_sends_onboarding(mock_extract, clien
 
     assert body["idle_reset_triggered"] is True
     assert ONBOARDING_INTRO in body["reply_text"]
-    assert "new website" in body["reply_text"].lower()
+    assert "what best describes your business" in body["reply_text"].lower() or (
+        "how did you hear about us" in body["reply_text"].lower()
+    )
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
 
 

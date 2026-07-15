@@ -34,8 +34,7 @@ LANGUAGE_PICKER_SETTINGS = {
 }
 
 IN_PROGRESS_FIELDS = {
-    "project_type": "new_website",
-    "requirements": "A restaurant website with online ordering",
+    "customer_type": "new_customer",
 }
 
 
@@ -310,11 +309,7 @@ def test_lang_en_button_from_arabic_returns_english_confirmation(mock_extract, m
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
 @patch("apps.qualification.services.language_gate_service.send_language_picker", return_value="SMpicker000000000000000000000001")
-@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter", return_value=QualificationFieldFilterResult(
-    accepted_fields={"referral_source": "Facebook"},
-    rejected_fields=(),
-    human_handoff_requested=False,
-))
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_next_message_after_language_change_continues_qualification(
     mock_extract,
     mock_send_picker,
@@ -338,9 +333,11 @@ def test_next_message_after_language_change_continues_qualification(
     )
 
     assert response.status_code == 200
-    mock_extract.assert_called_once()
-    assert get_accepted_fields(VALID_WHATSAPP_NUMBER)["project_type"] == "new_website"
-    assert get_accepted_fields(VALID_WHATSAPP_NUMBER)["referral_source"] == "Facebook"
+    mock_extract.assert_not_called()
+    fields = get_accepted_fields(VALID_WHATSAPP_NUMBER)
+    assert fields["customer_type"] == "new_customer"
+    assert fields["referral_source"] == "facebook"
+    assert response.json()["next_field"] == "business_type"
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
@@ -365,6 +362,124 @@ def test_normal_message_mentioning_english_does_not_change_language(
     assert response.status_code == 200
     mock_extract.assert_not_called()
     assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language == LANGUAGE_ENGLISH
+
+
+@override_settings(**LANGUAGE_PICKER_SETTINGS)
+@patch("apps.qualification.services.language_gate_service.send_language_picker")
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_typed_english_switches_arabic_conversation_to_english(
+    mock_extract,
+    mock_send_picker,
+    client,
+):
+    _arabic_session_with_progress()
+
+    response = _post_extract(
+        client,
+        _text_payload(message="English", message_sid=CHANGE_MESSAGE_SID),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_language"] == LANGUAGE_ENGLISH
+    assert body["next_field"] == "referral_source"
+    assert body["reply_text"] == _expect_language_change_reply(
+        language=LANGUAGE_ENGLISH,
+        next_field="referral_source",
+    )
+    assert (
+        WhatsAppConversationSession.objects.get(
+            whatsapp_number=VALID_WHATSAPP_NUMBER
+        ).language
+        == LANGUAGE_ENGLISH
+    )
+    assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
+    mock_send_picker.assert_not_called()
+    mock_extract.assert_not_called()
+
+
+@override_settings(**LANGUAGE_PICKER_SETTINGS)
+@patch("apps.qualification.services.language_gate_service.send_language_picker")
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_typed_arabic_switches_english_conversation_to_arabic(
+    mock_extract,
+    mock_send_picker,
+    client,
+):
+    _english_session_with_progress()
+
+    response = _post_extract(
+        client,
+        _text_payload(message="العربية", message_sid=CHANGE_MESSAGE_SID),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_language"] == LANGUAGE_ARABIC
+    assert body["next_field"] == "referral_source"
+    assert body["reply_text"] == _expect_language_change_reply(
+        language=LANGUAGE_ARABIC,
+        next_field="referral_source",
+    )
+    assert (
+        WhatsAppConversationSession.objects.get(
+            whatsapp_number=VALID_WHATSAPP_NUMBER
+        ).language
+        == LANGUAGE_ARABIC
+    )
+    assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == IN_PROGRESS_FIELDS
+    mock_send_picker.assert_not_called()
+    mock_extract.assert_not_called()
+
+
+@override_settings(**LANGUAGE_PICKER_SETTINGS)
+@patch("apps.qualification.services.language_gate_service.send_language_picker")
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_typed_switch_to_english_returns_english_referral_option_template(
+    mock_extract,
+    mock_send_picker,
+    client,
+):
+    _arabic_session_with_progress()
+
+    response = _post_extract(
+        client,
+        _text_payload(message="en", message_sid=CHANGE_MESSAGE_SID),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_language"] == LANGUAGE_ENGLISH
+    assert body["option_template"] == "referral_source"
+    assert get_customer_message(
+        language=LANGUAGE_ENGLISH, key="referral_source"
+    ) in body["reply_text"]
+    mock_extract.assert_not_called()
+
+
+@override_settings(**LANGUAGE_PICKER_SETTINGS)
+@patch("apps.qualification.services.language_gate_service.send_language_picker")
+@patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
+def test_typed_switch_to_arabic_returns_arabic_referral_option_template(
+    mock_extract,
+    mock_send_picker,
+    client,
+):
+    _english_session_with_progress()
+
+    response = _post_extract(
+        client,
+        _text_payload(message="ar", message_sid=CHANGE_MESSAGE_SID),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_language"] == LANGUAGE_ARABIC
+    assert body["option_template"] == "referral_source"
+    assert get_customer_message(
+        language=LANGUAGE_ARABIC, key="referral_source"
+    ) in body["reply_text"]
+    mock_extract.assert_not_called()
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)

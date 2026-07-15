@@ -15,6 +15,7 @@ from apps.qualification.conversation_flow import (
     is_qualification_complete,
 )
 from apps.qualification.conversation_state import get_accepted_fields
+from apps.qualification.api.logging import log_qualification_event
 from apps.qualification.domain.latency_profiling import (
     elapsed_ms_since,
     log_external_api_total,
@@ -50,7 +51,7 @@ from apps.qualification.message_idempotency import (
     cache_turn_response,
     get_cached_turn_response,
 )
-from apps.qualification.api.logging import log_qualification_event
+
 from apps.qualification.domain.extract_errors import ExtractStepFailure
 from apps.qualification.domain.voice_note_responses import (
     build_voice_transcription_unclear_response,
@@ -187,6 +188,7 @@ class ExtractService:
         whatsapp_number: str,
         transcript: str | None = None,
         user_message: str | None = None,
+        button_payload: str | None = None,
     ) -> None:
         """Emit turn-completed diagnostics without risking turn failure on log serialization."""
         try:
@@ -199,9 +201,14 @@ class ExtractService:
             captured_fields = {
                 key: accepted_fields.get(key)
                 for key in (
-                    "project_type",
-                    "requirements",
+                    "customer_type",
                     "referral_source",
+                    "business_type",
+                    "website_status",
+                    "paid_ads",
+                    "main_goal",
+                    "launch_timeline",
+                    "requirements",
                     "whatsapp_confirmed",
                     "preferred_phone",
                 )
@@ -210,13 +217,24 @@ class ExtractService:
             log_context: dict[str, Any] = {
                 "input_channel": input_channel,
                 "shared_handler_used": True,
+                "conversation_language": response_payload.get("conversation_language"),
+                "option_template": response_payload.get("option_template"),
+                "selected_option_payload": button_payload,
+                "customer_type": accepted_fields.get("customer_type"),
+                "referral_source": accepted_fields.get("referral_source"),
+                "business_type": accepted_fields.get("business_type"),
                 "conversation_state": response_payload.get("conversation_state"),
                 "state_before": {
                     key: state_before.get(key)
                     for key in (
-                        "project_type",
-                        "requirements",
+                        "customer_type",
                         "referral_source",
+                        "business_type",
+                        "website_status",
+                        "paid_ads",
+                        "main_goal",
+                        "launch_timeline",
+                        "requirements",
                         "whatsapp_confirmed",
                         "preferred_phone",
                         "booking_link_sent",
@@ -663,6 +681,13 @@ class ExtractService:
         validated_data = dict(validated_data)
         validated_data["whatsapp_number"] = whatsapp_number
         reconcile_stale_booking_link_sent_state(whatsapp_number=whatsapp_number)
+        from apps.qualification.services.existing_customer_live_agent_service import (
+            reconcile_stale_existing_customer_delivery_markers,
+        )
+
+        reconcile_stale_existing_customer_delivery_markers(
+            whatsapp_number=whatsapp_number,
+        )
 
         if message_sid:
             idempotency_started = time.perf_counter()
@@ -693,38 +718,14 @@ class ExtractService:
         if early_menu_response is not None:
             return early_menu_response
 
-        language_gate_started = time.perf_counter()
-        gate_result = self._language_gate_service.evaluate_turn(validated_data)
-        log_latency_step(
-            "language_gate",
-            elapsed_ms_since(language_gate_started),
-            message_sid=message_sid,
-            handled=gate_result.handled,
-        )
-        if gate_result.handled:
-            return self._cache_and_return_gate_response(
-                response_payload=gate_result.response_payload or {},
-                message_sid=message_sid,
-                whatsapp_number=whatsapp_number,
-                input_channel=input_channel,
-            )
-
-        transcript: str | None = None
-        conversation_language = get_conversation_language(whatsapp_number)
-        session, _ = get_or_create_conversation_session(whatsapp_number=whatsapp_number)
-        session.refresh_from_db()
+        # Idle reset must run before the language gate so a returning customer
+        # (new or existing) is prompted for language on the same turn that
+        # starts the new conversation cycle.
         previous_last_activity_at = session.last_message_at
         current_inbound_message_time = timezone.now()
         booking_link_sent_before = session.booking_link_sent_at is not None
         state_before = dict(get_accepted_fields(whatsapp_number))
         state_before["booking_link_sent"] = booking_link_sent_before
-
-        message, transcript, unclear_response = self._resolve_inbound_user_message(
-            validated_data=validated_data,
-            input_channel=input_channel,
-            message_sid=message_sid,
-            conversation_language=conversation_language,
-        )
         idle_reset_triggered, inactivity_gap_seconds = self._maybe_apply_idle_reset_on_inbound(
             session=session,
             whatsapp_number=whatsapp_number,
@@ -737,6 +738,44 @@ class ExtractService:
             booking_link_sent_before = False
             state_before = {}
             state_before["booking_link_sent"] = False
+            session.refresh_from_db()
+
+        log_qualification_event(
+            "language_gate_started",
+            message_sid=message_sid,
+            whatsapp_number_prefix=whatsapp_number[:6],
+            input_channel=input_channel,
+        )
+        language_gate_started = time.perf_counter()
+        gate_result = self._language_gate_service.evaluate_turn(validated_data)
+        log_latency_step(
+            "language_gate",
+            elapsed_ms_since(language_gate_started),
+            message_sid=message_sid,
+            handled=gate_result.handled,
+        )
+        if gate_result.handled:
+            response_payload = dict(gate_result.response_payload or {})
+            if idle_reset_triggered:
+                response_payload["idle_reset_triggered"] = True
+                response_payload["inactivity_gap_seconds"] = inactivity_gap_seconds
+            return self._cache_and_return_gate_response(
+                response_payload=response_payload,
+                message_sid=message_sid,
+                whatsapp_number=whatsapp_number,
+                input_channel=input_channel,
+            )
+
+        transcript: str | None = None
+        conversation_language = get_conversation_language(whatsapp_number)
+        session.refresh_from_db()
+
+        message, transcript, unclear_response = self._resolve_inbound_user_message(
+            validated_data=validated_data,
+            input_channel=input_channel,
+            message_sid=message_sid,
+            conversation_language=conversation_language,
+        )
 
         if unclear_response is not None:
             turn_response = unclear_response
@@ -761,6 +800,7 @@ class ExtractService:
                 whatsapp_number=whatsapp_number,
                 transcript=transcript,
                 user_message=message or "",
+                button_payload=validated_data.get("button_payload"),
             )
             if message_sid:
                 cache_turn_response(message_sid, response_payload)
@@ -821,6 +861,7 @@ class ExtractService:
                 message=message,
                 message_sid=message_sid,
                 for_voice=input_channel == "whatsapp_voice_note" or bool(call_sid),
+                button_payload=validated_data.get("button_payload"),
             )
             log_latency_step(
                 "qualification_turn_handler",
@@ -832,6 +873,27 @@ class ExtractService:
             turn_response = dict(turn_response)
             turn_response["idle_reset_triggered"] = True
             turn_response.pop("skip_onboarding_intro", None)
+
+        if turn_response.get("status") == "waiting_for_live_agent":
+            response_payload = dict(turn_response)
+            response_payload["idle_reset_triggered"] = idle_reset_triggered
+            response_payload["inactivity_gap_seconds"] = inactivity_gap_seconds
+            response_payload = self._attach_conversation_state(response_payload)
+            self._log_turn_completed(
+                input_channel=input_channel,
+                response_payload=response_payload,
+                state_before=state_before,
+                whatsapp_number=whatsapp_number,
+                transcript=transcript,
+                user_message=message or "",
+                button_payload=validated_data.get("button_payload"),
+            )
+            return self._cache_and_return_gate_response(
+                response_payload=response_payload,
+                message_sid=message_sid,
+                whatsapp_number=whatsapp_number,
+                input_channel=input_channel,
+            )
 
         finalize_started = time.perf_counter()
         turn_response = maybe_prepend_onboarding_intro(
@@ -872,6 +934,7 @@ class ExtractService:
             whatsapp_number=whatsapp_number,
             transcript=transcript,
             user_message=message,
+            button_payload=validated_data.get("button_payload"),
         )
 
         if call_sid and message:

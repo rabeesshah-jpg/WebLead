@@ -18,10 +18,11 @@ pytestmark = pytest.mark.django_db
 
 
 def test_english_message_lookup_returns_existing_english_text():
-    assert get_customer_message(language=LANGUAGE_ENGLISH, key="project_type") == (
-        "Are you looking for a new website, an upgrade to your existing website, "
-        "or both?"
-    )
+    business_type = get_customer_message(language=LANGUAGE_ENGLISH, key="business_type")
+    assert "What best describes your business?" in business_type
+    assert "1. Local service business" in business_type
+    customer_type = get_customer_message(language=LANGUAGE_ENGLISH, key="customer_type")
+    assert "new customer or an existing customer" in customer_type
     assert (
         get_customer_message(language=LANGUAGE_ENGLISH, key="preferred_phone")
         == "Please share the best phone number to reach you."
@@ -33,16 +34,17 @@ def test_onboarding_and_welcome_back_copy_uses_lightweight_formatting():
     welcome = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_welcome_back")
     assert intro.startswith("Hi, this is Noura from Good Websites!")
     assert "To get started" in intro
-    assert "Send M to open the menu" in intro
+    # Client-approved flow removed the start menu/help instructions.
+    assert "Send M to open the menu" not in intro
+    assert "voice note" not in intro
     assert "*" not in intro
     assert welcome == "Welcome back! Let's continue."
     assert "*" not in welcome
 
 
 def test_arabic_message_lookup_returns_arabic_text():
-    assert (
-        get_customer_message(language=LANGUAGE_ARABIC, key="project_type")
-        == "ما نوع الموقع الإلكتروني الذي تحتاجه؟"
+    assert "ما الذي يصف عملك بشكل أفضل؟" in get_customer_message(
+        language=LANGUAGE_ARABIC, key="business_type"
     )
     assert "يرجى إرسال رقم هاتف صحيح" in get_customer_message(
         language=LANGUAGE_ARABIC,

@@ -16,8 +16,6 @@ from apps.qualification.domain.help_commands import is_help_request
 from apps.qualification.domain.inbound_message_classification import (
     InboundMessageClassification,
     classify_inbound_message,
-    infer_project_type_from_answer,
-    is_direct_project_type_answer,
 )
 from apps.qualification.domain.inbound_message_responses import (
     build_reply_after_field_capture,
@@ -31,6 +29,21 @@ from apps.qualification.domain.qualification_field_enrichment import (
     merge_requirements,
     merge_services_required,
 )
+from apps.qualification.domain.qualification_options import (
+    CUSTOMER_TYPE_NEW,
+    VALID_CUSTOMER_TYPES,
+    VALID_REFERRAL_SOURCES,
+    normalize_customer_type,
+    normalize_referral_source,
+)
+from apps.qualification.domain.numbered_qualification import (
+    NUMBERED_QUALIFICATION_FIELDS,
+    apply_numbered_selection,
+    compose_requirements_summary,
+    has_numbered_qualification_answer,
+    is_numbered_qualification_field,
+    normalize_numbered_qualification_answer,
+)
 from apps.qualification.domain.validators import (
     collapse_phone_formatting,
     is_valid_e164_phone_number,
@@ -39,15 +52,27 @@ from apps.qualification.models import QualificationFieldFilterResult
 
 QualificationStatus = Literal["in_progress", "completed", "human_handoff"]
 
+# Client-approved qualification order (language is handled by the Twilio picker
+# gate before this flow runs):
+#   customer_type -> referral_source (new customers only) -> numbered questions
+#   -> booking link.
 FIELD_ORDER: tuple[str, ...] = (
-    "project_type",
-    "requirements",
+    "customer_type",
     "referral_source",
-    "whatsapp_confirmed",
-    "preferred_phone",
+    *NUMBERED_QUALIFICATION_FIELDS,
 )
 
-VALID_PROJECT_TYPES = frozenset({"new_website", "website_upgrade", "new_and_upgrade"})
+# Qualification completes after these fields; contact number is taken from the
+# inbound WhatsApp number and is never asked or confirmed with the customer.
+REQUIRED_QUALIFICATION_FIELDS: tuple[str, ...] = FIELD_ORDER
+
+# Option steps captured deterministically (numbered or keyword answers), for both
+# WhatsApp text and transcribed voice notes.
+DETERMINISTIC_OPTION_FIELDS: tuple[str, ...] = (
+    "customer_type",
+    "referral_source",
+    *NUMBERED_QUALIFICATION_FIELDS,
+)
 
 REJECTED_FIELD_REASON_CODES = {
     "null value": "value_missing",
@@ -55,7 +80,11 @@ REJECTED_FIELD_REASON_CODES = {
 }
 
 _CAPTURE_TRANSITION_FIELDS = frozenset(
-    {"project_type", "requirements", "referral_source"},
+    {
+        "customer_type",
+        "referral_source",
+        *NUMBERED_QUALIFICATION_FIELDS,
+    }
 )
 
 
@@ -63,9 +92,10 @@ def qualification_has_started(fields: dict[str, Any]) -> bool:
     """Return True once any qualification field has been captured."""
     return any(
         (
-            _has_project_type(fields),
-            _has_requirements(fields),
+            _has_customer_type(fields),
             _has_referral_source(fields),
+            *(_has_numbered_field(fields, field) for field in NUMBERED_QUALIFICATION_FIELDS),
+            _has_requirements(fields),
             _is_whatsapp_confirmed_resolved(fields),
             _has_preferred_phone(fields),
         )
@@ -78,12 +108,18 @@ def _newly_captured_qualification_field(
 ) -> str | None:
     """Return the last qualification field newly captured between two snapshots."""
     captured: str | None = None
-    checks: tuple[tuple[str, Any], ...] = (
-        ("project_type", _has_project_type),
-        ("requirements", _has_requirements),
+    checks: list[tuple[str, Any]] = [
+        ("customer_type", _has_customer_type),
         ("referral_source", _has_referral_source),
-        ("whatsapp_confirmed", _is_whatsapp_confirmed_resolved),
-        ("preferred_phone", _has_preferred_phone),
+    ]
+    for field_name in NUMBERED_QUALIFICATION_FIELDS:
+        checks.append((field_name, lambda fields, name=field_name: _has_numbered_field(fields, name)))
+    checks.extend(
+        (
+            ("requirements", _has_requirements),
+            ("whatsapp_confirmed", _is_whatsapp_confirmed_resolved),
+            ("preferred_phone", _has_preferred_phone),
+        )
     )
     for field_name, checker in checks:
         if checker(after) and not checker(before):
@@ -153,7 +189,7 @@ def _apply_field_updates(
             )
         elif field == "requirements":
             result[field] = merge_requirements(result.get("requirements"), str(value))
-        elif field == "project_type" and not result.get("project_type"):
+        elif is_numbered_qualification_field(field) and not result.get(field):
             result[field] = value
         else:
             result[field] = value
@@ -258,6 +294,157 @@ def try_handle_small_talk_qualification_turn(
     )
 
 
+def next_missing_question(
+    *,
+    whatsapp_number: str,
+    language: str = LANGUAGE_ENGLISH,
+) -> str | None:
+    """Return the next qualification question (with numbered options), or None when complete."""
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    next_field = _next_missing_field(persisted_fields)
+    if next_field is None:
+        return None
+    return get_qualification_question_text(
+        language=normalize_conversation_language(language),
+        field=next_field,
+        repeat=False,
+        whatsapp_number=whatsapp_number,
+    )
+
+
+def _normalize_step_value(
+    next_field: str,
+    message: str,
+    *,
+    button_payload: str | None = None,
+    language: str = LANGUAGE_ENGLISH,
+) -> str | dict[str, Any] | None:
+    """Normalize a menu answer to its canonical stored value for ``next_field``."""
+    if next_field == "customer_type":
+        return normalize_customer_type(message)
+    if next_field == "referral_source":
+        # Only canonical referral_source values advance the flow. Invalid input
+        # re-asks the question (controlled 200), never raises.
+        return normalize_referral_source(message, button_payload=button_payload)
+    if is_numbered_qualification_field(next_field):
+        # Prefer typed/numeric Body; also accept list-picker button payloads
+        # whose Content SID values map to the current step's option IDs.
+        selection = normalize_numbered_qualification_answer(
+            next_field,
+            message,
+            language=language,
+        )
+        if selection is None and button_payload:
+            selection = normalize_numbered_qualification_answer(
+                next_field,
+                button_payload,
+                language=language,
+            )
+        return selection
+    return None
+
+
+def try_handle_qualification_step_turn(
+    *,
+    whatsapp_number: str,
+    message: str,
+    language: str = LANGUAGE_ENGLISH,
+    for_voice: bool = False,
+    button_payload: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Capture menu option steps: customer_type, referral_source, numbered questions.
+
+    Numbered qualification questions accept numeric replies or same-step option
+    IDs (including list-picker ``button_payload`` values). Unrecognized answers
+    re-ask the current question with its options. Booking follows the final
+    numbered answer.
+    """
+    del for_voice  # Same normalization path for text and transcribed voice.
+    persisted_fields = get_accepted_fields(whatsapp_number)
+    next_field = _next_missing_field(persisted_fields)
+    if next_field not in DETERMINISTIC_OPTION_FIELDS:
+        return None
+
+    normalized_language = normalize_conversation_language(language)
+    value = _normalize_step_value(
+        next_field,
+        message,
+        button_payload=button_payload,
+        language=normalized_language,
+    )
+
+    if value is None:
+        reply_text = get_qualification_question_text(
+            language=normalized_language,
+            field=next_field,
+            repeat=False,
+            whatsapp_number=whatsapp_number,
+        )
+        return _with_conversation_language(
+            {
+                "accepted_fields": dict(persisted_fields),
+                "rejected_fields": {next_field: "value_missing"},
+                "human_handoff_requested": False,
+                "next_field": next_field,
+                "reply_text": reply_text,
+                "qualification_status": "in_progress",
+                "preferred_phone": persisted_fields.get("preferred_phone"),
+                "skip_onboarding_intro": qualification_has_started(persisted_fields),
+            },
+            language=normalized_language,
+        )
+
+    merged_fields = dict(persisted_fields)
+    if is_numbered_qualification_field(next_field) and isinstance(value, dict):
+        merged_fields = apply_numbered_selection(merged_fields, next_field, value)
+    else:
+        merged_fields[next_field] = value
+    new_next_field = _next_missing_field(merged_fields)
+
+    if new_next_field is None:
+        merged_fields = _finalize_numbered_qualification_fields(
+            merged_fields,
+            language=normalized_language,
+        )
+        merged_fields = apply_contact_number_defaults(merged_fields, whatsapp_number)
+        save_accepted_fields(whatsapp_number, merged_fields)
+        return _with_conversation_language(
+            {
+                "accepted_fields": merged_fields,
+                "rejected_fields": {},
+                "human_handoff_requested": False,
+                "next_field": None,
+                "reply_text": _completed_reply_text(language=normalized_language),
+                "qualification_status": "completed",
+                "preferred_phone": merged_fields.get("preferred_phone"),
+                "skip_onboarding_intro": True,
+            },
+            language=normalized_language,
+        )
+
+    save_accepted_fields(whatsapp_number, merged_fields)
+    reply_text = build_reply_after_field_capture(
+        captured_field=next_field,
+        next_field=new_next_field,
+        language=normalized_language,
+        whatsapp_number=whatsapp_number,
+    )
+    return _with_conversation_language(
+        {
+            "accepted_fields": merged_fields,
+            "rejected_fields": {},
+            "human_handoff_requested": False,
+            "next_field": new_next_field,
+            "reply_text": reply_text,
+            "qualification_status": "in_progress",
+            "preferred_phone": merged_fields.get("preferred_phone"),
+            "skip_onboarding_intro": qualification_has_started(persisted_fields),
+        },
+        language=normalized_language,
+    )
+
+
 def _rich_inbound_skip_onboarding(
     classification: InboundMessageClassification,
     *,
@@ -297,44 +484,6 @@ def try_handle_rich_inbound_qualification_turn(
 
     normalized_language = normalize_conversation_language(language)
 
-    if active_field == "project_type" and not persisted_fields.get("project_type"):
-        project_type_answer = infer_project_type_from_answer(message)
-        if project_type_answer and is_direct_project_type_answer(message):
-            merged_fields = dict(persisted_fields)
-            merged_fields["project_type"] = project_type_answer
-            save_accepted_fields(whatsapp_number, merged_fields)
-            next_field = _next_missing_field(merged_fields)
-            if next_field:
-                reply_text = build_reply_after_field_capture(
-                    captured_field="project_type",
-                    next_field=next_field,
-                    language=normalized_language,
-                    whatsapp_number=whatsapp_number,
-                )
-            else:
-                reply_text = _completed_reply_text(language=normalized_language)
-            return _with_conversation_language(
-                {
-                    "accepted_fields": merged_fields,
-                    "rejected_fields": {},
-                    "human_handoff_requested": False,
-                    "next_field": next_field,
-                    "reply_text": reply_text,
-                    "qualification_status": (
-                        "completed" if next_field is None else "in_progress"
-                    ),
-                    "preferred_phone": merged_fields.get("preferred_phone"),
-                    "skip_onboarding_intro": True,
-                    **build_rich_inbound_response_metadata(
-                        classification,
-                        {"project_type": project_type_answer},
-                        next_field=next_field,
-                        complete=next_field is None,
-                    ),
-                },
-                language=normalized_language,
-            )
-
     updates = apply_classification_to_fields(persisted_fields, classification)
     saved_enrichment = bool(updates)
     has_rich_content = (
@@ -344,6 +493,39 @@ def try_handle_rich_inbound_qualification_turn(
         or classification.irrelevant_or_unclear
     )
     if not has_rich_content:
+        return None
+
+    # While a numbered option question is active, do not accept free-text enrichment
+    # as progress — only numeric replies via the deterministic step handler count.
+    if is_numbered_qualification_field(active_field):
+        if classification.has_user_question or classification.irrelevant_or_unclear:
+            reply_text = build_rich_qualification_reply(
+                classification,
+                language=normalized_language,
+                saved_enrichment=False,
+                next_field=active_field,
+                whatsapp_number=whatsapp_number,
+                qualification_in_progress=qualification_has_started(persisted_fields),
+            )
+            return _with_conversation_language(
+                {
+                    "accepted_fields": dict(persisted_fields),
+                    "rejected_fields": {active_field: "value_missing"},
+                    "human_handoff_requested": False,
+                    "next_field": active_field,
+                    "reply_text": reply_text,
+                    "qualification_status": "in_progress",
+                    "preferred_phone": persisted_fields.get("preferred_phone"),
+                    "skip_onboarding_intro": True,
+                    **build_rich_inbound_response_metadata(
+                        classification,
+                        {},
+                        next_field=active_field,
+                        complete=False,
+                    ),
+                },
+                language=normalized_language,
+            )
         return None
 
     # Irrelevant alone: redirect politely without inventing new field values.
@@ -382,11 +564,12 @@ def try_handle_rich_inbound_qualification_turn(
     )
 
     merged_fields = _apply_field_updates(persisted_fields, updates)
-    save_accepted_fields(whatsapp_number, merged_fields)
     next_field = _next_missing_field(merged_fields)
     captured_field = _newly_captured_qualification_field(persisted_fields, merged_fields)
 
     if _is_qualification_complete(merged_fields):
+        merged_fields = apply_contact_number_defaults(merged_fields, whatsapp_number)
+        save_accepted_fields(whatsapp_number, merged_fields)
         return _with_conversation_language(
             {
                 "accepted_fields": merged_fields,
@@ -405,6 +588,8 @@ def try_handle_rich_inbound_qualification_turn(
             },
             language=normalized_language,
         )
+
+    save_accepted_fields(whatsapp_number, merged_fields)
 
     if (
         captured_field in _CAPTURE_TRANSITION_FIELDS
@@ -475,6 +660,11 @@ def build_completed_retry_response(
 ) -> dict[str, Any]:
     """Return a completed response for an already-finished conversation."""
     merged_fields = get_accepted_fields(whatsapp_number)
+    if _is_qualification_complete(merged_fields) and not _has_preferred_phone(merged_fields):
+        # Backward compatibility: sessions completed before contact fields were
+        # auto-filled (or that stopped at the old phone-confirmation step).
+        merged_fields = apply_contact_number_defaults(merged_fields, whatsapp_number)
+        save_accepted_fields(whatsapp_number, merged_fields)
     return _with_conversation_language(
         {
             "accepted_fields": merged_fields,
@@ -652,15 +842,8 @@ def try_handle_preferred_phone_turn(
 
 
 def should_ask_phone_confirmation(persisted_fields: dict[str, Any]) -> bool:
-    """Return whether the phone-confirmation question context is active."""
-    if not _has_referral_source(persisted_fields):
-        return False
-    if not _is_whatsapp_confirmed_resolved(persisted_fields):
-        return True
-    return (
-        persisted_fields.get("whatsapp_confirmed") is False
-        and not _has_preferred_phone(persisted_fields)
-    )
+    """Phone confirmation is no longer part of the qualification flow."""
+    return False
 
 
 def merge_accepted_fields(
@@ -675,19 +858,33 @@ def merge_accepted_fields(
     return merged
 
 
-def apply_preferred_phone_rules(
+def apply_contact_number_defaults(
     accepted_fields: dict[str, Any],
     whatsapp_number: str,
 ) -> dict[str, Any]:
-    """Set preferred_phone from WhatsApp number when the customer confirmed it."""
-    if accepted_fields.get("whatsapp_confirmed") is True:
-        accepted_fields = dict(accepted_fields)
-        accepted_fields["preferred_phone"] = whatsapp_number
-    return accepted_fields
+    """
+    Populate contact fields from the inbound WhatsApp number for completed leads.
+
+    The customer is never asked to confirm the number or provide an alternate one.
+    ``whatsapp_confirmed`` and ``preferred_phone`` are kept only for backward
+    compatibility with the extraction schema and downstream consumers.
+    """
+    updated = dict(accepted_fields)
+    updated["whatsapp_confirmed"] = True
+    updated["preferred_phone"] = whatsapp_number
+    return updated
 
 
-def _has_project_type(fields: dict[str, Any]) -> bool:
-    return fields.get("project_type") in VALID_PROJECT_TYPES
+def _has_customer_type(fields: dict[str, Any]) -> bool:
+    return fields.get("customer_type") in VALID_CUSTOMER_TYPES
+
+
+def _is_new_customer(fields: dict[str, Any]) -> bool:
+    return fields.get("customer_type") == CUSTOMER_TYPE_NEW
+
+
+def _has_numbered_field(fields: dict[str, Any], field: str) -> bool:
+    return has_numbered_qualification_answer(fields, field)
 
 
 def _has_requirements(fields: dict[str, Any]) -> bool:
@@ -697,7 +894,7 @@ def _has_requirements(fields: dict[str, Any]) -> bool:
 
 def _has_referral_source(fields: dict[str, Any]) -> bool:
     value = fields.get("referral_source")
-    return isinstance(value, str) and bool(value.strip())
+    return isinstance(value, str) and value in VALID_REFERRAL_SOURCES
 
 
 def _is_whatsapp_confirmed_resolved(fields: dict[str, Any]) -> bool:
@@ -713,17 +910,27 @@ def _has_preferred_phone(fields: dict[str, Any]) -> bool:
     return is_valid_e164_phone_number(normalized)
 
 
+def _finalize_numbered_qualification_fields(
+    fields: dict[str, Any],
+    *,
+    language: str,
+) -> dict[str, Any]:
+    """Attach a requirements summary for lead-store consumers after the last question."""
+    updated = dict(fields)
+    summary = compose_requirements_summary(updated, language=language)
+    if summary and not _has_requirements(updated):
+        updated["requirements"] = summary
+    return updated
+
+
 def _next_missing_field(fields: dict[str, Any]) -> str | None:
-    if not _has_project_type(fields):
-        return "project_type"
-    if not _has_requirements(fields):
-        return "requirements"
-    if not _has_referral_source(fields):
+    if not _has_customer_type(fields):
+        return "customer_type"
+    if _is_new_customer(fields) and not _has_referral_source(fields):
         return "referral_source"
-    if not _is_whatsapp_confirmed_resolved(fields):
-        return "whatsapp_confirmed"
-    if fields.get("whatsapp_confirmed") is False and not _has_preferred_phone(fields):
-        return "preferred_phone"
+    for field in NUMBERED_QUALIFICATION_FIELDS:
+        if not _has_numbered_field(fields, field):
+            return field
     return None
 
 
@@ -745,15 +952,19 @@ def build_turn_response(
     """Merge extraction results into conversation state and build the API response."""
     persisted_fields = get_accepted_fields(whatsapp_number)
     merged_fields = merge_accepted_fields(persisted_fields, filter_result.accepted_fields)
-    merged_fields = apply_preferred_phone_rules(merged_fields, whatsapp_number)
+    normalized_language = normalize_conversation_language(language)
+    if not filter_result.human_handoff_requested and _is_qualification_complete(merged_fields):
+        merged_fields = _finalize_numbered_qualification_fields(
+            merged_fields,
+            language=normalized_language,
+        )
+        merged_fields = apply_contact_number_defaults(merged_fields, whatsapp_number)
     save_accepted_fields(whatsapp_number, merged_fields)
 
     rejected_fields = {
         rejected.field_name: REJECTED_FIELD_REASON_CODES[rejected.reason]
         for rejected in filter_result.rejected_fields
     }
-    normalized_language = normalize_conversation_language(language)
-
     if filter_result.human_handoff_requested:
         return _with_conversation_language(
             {

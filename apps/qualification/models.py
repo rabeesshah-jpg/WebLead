@@ -70,6 +70,31 @@ class WhatsAppConversationSession(models.Model):
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
     human_handoff_requested_at = models.DateTimeField(null=True, blank=True, db_index=True)
     booking_link_sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Durable "this number is a qualified/existing customer" marker. Set once when
+    # qualification completes and deliberately preserved across restart / idle
+    # reset so returning customers can be auto-detected and skip customer_type.
+    qualified_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Existing-customer live-agent connect + delayed Noura follow-up (once per cycle).
+    existing_customer_connecting_sent_at = models.DateTimeField(
+        null=True, blank=True, db_index=True
+    )
+    existing_customer_followup_due_at = models.DateTimeField(
+        null=True, blank=True, db_index=True
+    )
+    existing_customer_noura_sent_at = models.DateTimeField(
+        null=True, blank=True, db_index=True
+    )
+    existing_customer_followup_sent_at = models.DateTimeField(
+        null=True, blank=True, db_index=True
+    )
+    existing_customer_business_type_picker_sent_at = models.DateTimeField(
+        null=True, blank=True, db_index=True
+    )
+    # Durable in-progress qualification fields. Cache/Redis remains a fast overlay;
+    # this JSON blob is the restart-safe source of truth for the active cycle.
+    accepted_fields = models.JSONField(default=dict, blank=True)
+    # Bumped on idle reset / menu restart so delivery markers belong to one cycle.
+    conversation_cycle = models.PositiveIntegerField(default=1, db_index=True)
     onboarding_intro_sent = models.BooleanField(default=True, db_index=True)
     last_onboarding_intro_at = models.DateTimeField(null=True, blank=True, db_index=True)
 

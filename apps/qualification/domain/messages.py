@@ -13,9 +13,13 @@ from apps.qualification.domain.language_selection import (
 logger = logging.getLogger("apps.qualification")
 
 QUALIFICATION_QUESTION_KEYS: tuple[str, ...] = (
-    "project_type",
-    "requirements",
+    "customer_type",
     "referral_source",
+    "business_type",
+    "website_status",
+    "paid_ads",
+    "main_goal",
+    "launch_timeline",
     "whatsapp_confirmed",
     "preferred_phone",
 )
@@ -38,9 +42,9 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
     "small_talk_about",
     "small_talk_role",
     "small_talk_role_alt",
-    "project_type_variant_1",
-    "project_type_variant_2",
-    "project_type_variant_3",
+    "referral_source_voice",
+    "referral_source_new_customer_intro",
+    "referral_source_new_customer_intro_voice",
     "llm_parse_fallback",
     "requirement_acknowledged",
     "irrelevant_redirect",
@@ -53,6 +57,14 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
     "whatsapp_confirmation_noted_reask_voice",
     "whatsapp_confirmation_also_reask_voice",
     "human_handoff",
+    "existing_customer_connecting",
+    "existing_customer_connecting_voice",
+    "existing_customer_welcome_back",
+    "existing_customer_welcome_back_voice",
+    "existing_customer_noura_followup",
+    "existing_customer_noura_followup_voice",
+    "existing_customer_please_wait",
+    "existing_customer_please_wait_voice",
     "generic_retry",
     "generic_error",
     "whatsapp_menu",
@@ -61,9 +73,9 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
     "onboarding_intro_voice",
     "onboarding_welcome_back",
     "onboarding_welcome_back_voice",
-    "after_project_type_captured",
-    "after_requirements_captured",
+    "after_customer_type_captured",
     "after_referral_source_captured",
+    "after_numbered_option_captured",
     "post_booking_default",
     "post_booking_greeting",
     "post_booking_wellbeing",
@@ -77,23 +89,37 @@ REQUIRED_MESSAGE_KEYS: tuple[str, ...] = (
 
 QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
     "en": {
-        "project_type": (
-            "Are you looking for a new website, an upgrade to your existing website, "
-            "or both?"
+        "customer_type": (
+            "Are you a new customer or an existing customer?\n"
+            "1. New customer\n"
+            "2. Existing customer"
         ),
-        "project_type_variant_1": (
-            "Let's start with one quick question: are you looking for a new website, "
-            "an upgrade, or both?"
+        "referral_source": (
+            "How did you hear about us?\n"
+            "1. Google\n"
+            "2. Instagram\n"
+            "3. Facebook\n"
+            "4. Friend / Referral\n"
+            "5. Other"
         ),
-        "project_type_variant_2": (
-            "Please choose one: new website, upgrade existing website, or both."
+        "referral_source_voice": (
+            "How did you hear about us? You can say Google, Instagram, Facebook, "
+            "Friend Referral, or Other."
         ),
-        "project_type_variant_3": (
-            "First, are you looking for a new website, an upgrade to your existing "
-            "website, or both?"
+        "referral_source_new_customer_intro": (
+            "Hi, this is Noura from Good Websites. Great to meet you.\n\n"
+            "How did you hear about us?\n"
+            "1. Google\n"
+            "2. Instagram\n"
+            "3. Facebook\n"
+            "4. Friend / Referral\n"
+            "5. Other"
         ),
-        "requirements": "May I know what type of website help you need?",
-        "referral_source": "How did you hear about Good Websites?",
+        "referral_source_new_customer_intro_voice": (
+            "Hi, this is Noura from Good Websites. Great to meet you. "
+            "How did you hear about us? You can say Google, Instagram, Facebook, "
+            "friend referral, or other."
+        ),
         "whatsapp_confirmed": (
             "Is this the best contact number for our team to reach you?"
         ),
@@ -178,6 +204,30 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "Language set to English. We can continue from here."
         ),
         "human_handoff": "Thank you. A team member will follow up with you shortly.",
+        "existing_customer_connecting": (
+            "Connecting you with a live agent. Please wait a moment."
+        ),
+        "existing_customer_connecting_voice": (
+            "Connecting you with a live agent. Please wait a moment."
+        ),
+        "existing_customer_welcome_back": (
+            "Hi, this is Noura from Good Websites. Welcome back!"
+        ),
+        "existing_customer_welcome_back_voice": (
+            "Hi, this is Noura from Good Websites. Welcome back!"
+        ),
+        "existing_customer_noura_followup": (
+            "Hi this is Noura from Good Websites. How may I help you today?"
+        ),
+        "existing_customer_noura_followup_voice": (
+            "Hi this is Noura from Good Websites. How may I help you today?"
+        ),
+        "existing_customer_please_wait": (
+            "Connecting you with a live agent. Please wait a moment."
+        ),
+        "existing_customer_please_wait_voice": (
+            "Connecting you with a live agent. Please wait a moment."
+        ),
         "whatsapp_menu": (
             "Please choose an option:\n"
             "1. Continue current conversation\n"
@@ -185,20 +235,12 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "3. Change language\n"
             "4. Talk to human"
         ),
-        "restart_intro": (
-            "Sure, let's start again. Are you looking for a new website, an upgrade to "
-            "your existing website, or both?"
-        ),
+        "restart_intro": "Sure, let's start again.",
         "onboarding_intro": (
             "Hi, this is Noura from Good Websites!\n"
             "\n"
             "To get started, I'll ask a few quick questions so our team can understand "
-            "your project and guide you toward booking a meeting.\n"
-            "\n"
-            "How to use this chat:\n"
-            "• Send M to open the menu\n"
-            "• To change language, send M and choose Change language\n"
-            "• You can reply by text or voice note"
+            "your project and guide you toward booking a meeting."
         ),
         "onboarding_intro_voice": (
             "Hi, this is Noura from Good Websites. I've sent the chat instructions "
@@ -206,9 +248,9 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         ),
         "onboarding_welcome_back": "Welcome back! Let's continue.",
         "onboarding_welcome_back_voice": "Welcome back. Let's continue.",
-        "after_project_type_captured": "Great, thanks.",
-        "after_requirements_captured": "Thank you.",
+        "after_customer_type_captured": "Thank you.",
         "after_referral_source_captured": "Thanks.",
+        "after_numbered_option_captured": "Thanks.",
         "post_booking_default": (
             "Please use the booking link above whenever you're ready."
         ),
@@ -245,18 +287,35 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         "generic_error": "Sorry, I could not process that. Please try again.",
     },
     "ar": {
-        "project_type": "ما نوع الموقع الإلكتروني الذي تحتاجه؟",
-        "project_type_variant_1": (
-            "لنبدأ بسؤال سريع: هل تبحث عن موقع جديد أم ترقية أم كليهما؟"
+        "customer_type": (
+            "هل أنت عميل جديد أم عميل حالي؟\n"
+            "1. عميل جديد\n"
+            "2. عميل حالي"
         ),
-        "project_type_variant_2": (
-            "يرجى اختيار أحد الخيارات: موقع جديد، ترقية موقع حالي، أو كليهما."
+        "referral_source": (
+            "كيف سمعت عنا؟\n"
+            "1. جوجل\n"
+            "2. إنستغرام\n"
+            "3. فيسبوك\n"
+            "4. صديق / إحالة\n"
+            "5. أخرى"
         ),
-        "project_type_variant_3": (
-            "أولًا، هل تبحث عن موقع جديد أم ترقية لموقعك الحالي أم كليهما؟"
+        "referral_source_voice": (
+            "كيف سمعت عنا؟ يمكنك اختيار جوجل، إنستغرام، فيسبوك، صديق أو إحالة، أو أخرى."
         ),
-        "requirements": "ما الذي تبحث عنه تحديدًا؟",
-        "referral_source": "شكرًا لك. كيف سمعت عنا؟",
+        "referral_source_new_customer_intro": (
+            "مرحبًا، معك نورة من Good Websites. سعداء بتواصلك معنا.\n\n"
+            "كيف سمعت عنا؟\n"
+            "1. جوجل\n"
+            "2. إنستغرام\n"
+            "3. فيسبوك\n"
+            "4. صديق / إحالة\n"
+            "5. أخرى"
+        ),
+        "referral_source_new_customer_intro_voice": (
+            "مرحبًا، معك نورة من Good Websites. سعداء بتواصلك معنا. "
+            "كيف سمعت عنا؟ يمكنك اختيار جوجل، إنستغرام، فيسبوك، صديق أو إحالة، أو أخرى."
+        ),
         "whatsapp_confirmed": "شكرًا لك. هل رقم واتساب هذا هو أفضل رقم للتواصل معك؟",
         "preferred_phone": "يرجى مشاركة أفضل رقم هاتف يمكننا التواصل معك من خلاله.",
         "preferred_phone_after_whatsapp_decline": (
@@ -311,13 +370,13 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "سأجمع فقط بعض تفاصيل المشروع الأساسية."
         ),
         "invalid_phone": "يرجى إرسال رقم هاتف صحيح مع رمز الدولة.",
-        "completion": "ممتاز، شكرًا لك. يرجى حجز موعد من هنا: {booking_link}",
+        "completion": "رائع، شكرًا لك. يمكنك حجز موعد من هنا: {booking_link}",
         "completion_with_booking_link": (
-            "ممتاز، شكرًا لك. يرجى حجز موعد من هنا: {booking_link}"
+            "رائع، شكرًا لك. يمكنك حجز موعد من هنا: {booking_link}"
         ),
         "completion_spoken": (
-            "ممتاز، شكرًا لك. لقد أرسلت رابط الحجز أعلاه. "
-            "يمكنك اختيار موعد في أي وقت يناسبك."
+            "رائع، شكرًا لك. لقد أرسلت رابط الحجز أعلاه. "
+            "يمكنك اختيار الوقت المناسب لك."
         ),
         "completion_whatsapp_booking_link": "يرجى حجز موعد من هنا: {booking_link}",
         "completion_pending_booking_link": (
@@ -335,6 +394,30 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "تم ضبط اللغة إلى العربية. يمكننا المتابعة من هنا."
         ),
         "human_handoff": "شكرًا لك. سيتواصل معك أحد أعضاء فريقنا قريبًا.",
+        "existing_customer_connecting": (
+            "نقوم بتوصيلك مع وكيل مباشر. يرجى الانتظار لحظة."
+        ),
+        "existing_customer_connecting_voice": (
+            "نقوم بتوصيلك مع وكيل مباشر. يرجى الانتظار لحظة."
+        ),
+        "existing_customer_welcome_back": (
+            "مرحبًا، معك نورة من Good Websites. مرحبًا بعودتك!"
+        ),
+        "existing_customer_welcome_back_voice": (
+            "مرحبًا، معك نورة من Good Websites. مرحبًا بعودتك!"
+        ),
+        "existing_customer_noura_followup": (
+            "مرحبًا، معك نورة من Good Websites. كيف يمكنني مساعدتك اليوم؟"
+        ),
+        "existing_customer_noura_followup_voice": (
+            "مرحبًا، معك نورة من Good Websites. كيف يمكنني مساعدتك اليوم؟"
+        ),
+        "existing_customer_please_wait": (
+            "نقوم بتوصيلك مع وكيل مباشر. يرجى الانتظار لحظة."
+        ),
+        "existing_customer_please_wait_voice": (
+            "نقوم بتوصيلك مع وكيل مباشر. يرجى الانتظار لحظة."
+        ),
         "whatsapp_menu": (
             "يرجى اختيار أحد الخيارات:\n"
             "1. متابعة المحادثة الحالية\n"
@@ -342,19 +425,11 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
             "3. تغيير اللغة\n"
             "4. التحدث مع موظف"
         ),
-        "restart_intro": (
-            "أكيد، خلينا نبدأ من جديد. هل تبحث عن موقع جديد أم ترقية موقعك الحالي "
-            "أم كليهما؟"
-        ),
+        "restart_intro": "أكيد، خلينا نبدأ من جديد.",
         "onboarding_intro": (
             "مرحبًا، معك نورة من Good Websites!\n"
             "\n"
-            "لنبدأ، سأطرح بعض الأسئلة السريعة حتى يفهم فريقنا مشروعك ويرشدك نحو حجز اجتماع.\n"
-            "\n"
-            "طريقة استخدام هذه المحادثة:\n"
-            "• أرسل M لفتح القائمة\n"
-            "• لتغيير اللغة، أرسل M ثم اختر تغيير اللغة\n"
-            "• يمكنك الرد بالنص أو بالملاحظة الصوتية"
+            "لنبدأ، سأطرح بعض الأسئلة السريعة حتى يفهم فريقنا مشروعك ويرشدك نحو حجز اجتماع."
         ),
         "onboarding_intro_voice": (
             "مرحبًا، معك نورة من Good Websites. أرسلت تعليمات المحادثة في رسالة نصية. "
@@ -362,21 +437,21 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         ),
         "onboarding_welcome_back": "مرحبًا بعودتك! لنكمل.",
         "onboarding_welcome_back_voice": "مرحبًا بعودتك. لنكمل.",
-        "after_project_type_captured": "رائع، شكرًا.",
-        "after_requirements_captured": "شكرًا لك.",
+        "after_customer_type_captured": "شكرًا لك.",
         "after_referral_source_captured": "شكرًا.",
-        "post_booking_default": "يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا.",
+        "after_numbered_option_captured": "شكرًا.",
+        "post_booking_default": "يرجى استخدام رابط الحجز أعلاه عندما تكون جاهزًا.",
         "post_booking_greeting": (
-            "مرحبًا. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+            "مرحبًا. يرجى استخدام رابط الحجز أعلاه عندما تكون جاهزًا."
         ),
         "post_booking_wellbeing": (
-            "أنا بخير، شكرًا لسؤالك. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+            "أنا بخير، شكرًا لسؤالك. يرجى استخدام رابط الحجز أعلاه عندما تكون جاهزًا."
         ),
         "post_booking_greeting_wellbeing": (
-            "أنا بخير، شكرًا لسؤالك. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+            "أنا بخير، شكرًا لسؤالك. يرجى استخدام رابط الحجز أعلاه عندما تكون جاهزًا."
         ),
         "post_booking_thanks": (
-            "على الرحب والسعة. يرجى استخدام رابط الحجز أعلاه متى ما كنت مستعدًا."
+            "على الرحب والسعة. يرجى استخدام رابط الحجز أعلاه عندما تكون جاهزًا."
         ),
         "post_booking_exit": (
             "لا مشكلة. يمكنك استخدام رابط الحجز أعلاه متى ما كنت مستعدًا، "
@@ -396,6 +471,24 @@ QUALIFICATION_MESSAGES: dict[str, dict[str, str]] = {
         "generic_error": "عذرًا، لم أتمكن من معالجة رسالتك. يرجى المحاولة مرة أخرى.",
     },
 }
+
+
+def _seed_numbered_qualification_messages() -> None:
+    """Populate bilingual numbered-question prompts from the option catalog."""
+    from apps.qualification.domain.numbered_qualification import (
+        NUMBERED_QUALIFICATION_FIELDS,
+        format_numbered_question,
+    )
+
+    for language in (LANGUAGE_ENGLISH, LANGUAGE_ARABIC):
+        for field in NUMBERED_QUALIFICATION_FIELDS:
+            QUALIFICATION_MESSAGES[language][field] = format_numbered_question(
+                field=field,
+                language=language,
+            )
+
+
+_seed_numbered_qualification_messages()
 
 
 class UnknownMessageKeyError(KeyError):

@@ -18,8 +18,8 @@ Return one minified JSON object only (no markdown) with keys:
 project_type (new_website|website_upgrade|new_and_upgrade|null), requirements, referral_source, whatsapp_confirmed,
 preferred_phone, human_handoff_requested (boolean, never null), confidence.
 confidence must contain only: project_type, requirements, referral_source, whatsapp_confirmed, preferred_phone (0.0-1.0).
-Use null for missing values except human_handoff_requested (use false). Set whatsapp_confirmed/preferred_phone only when phone_confirmation_question_asked=true.
-preferred_phone must be E.164 when provided.
+Use null for missing values except human_handoff_requested (use false).
+Never ask the customer to confirm their phone number or provide an alternative number; always return whatsapp_confirmed=null and preferred_phone=null (contact comes from the inbound WhatsApp number).
 """.strip()
 
 ARABIC_CONVERSATION_INSTRUCTIONS = """

@@ -338,6 +338,11 @@ class ExtractResponseSerializer(serializers.Serializer):
     text_fallback_reply = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     transcript = serializers.CharField(required=False, allow_null=True)
     language_command_action = serializers.CharField(required=False, allow_null=True)
+    followup_delay_seconds = serializers.IntegerField(required=False, allow_null=True)
+    existing_customer_followup_scheduled = serializers.BooleanField(required=False)
+    existing_customer_followup_sent = serializers.BooleanField(required=False)
+    business_type_content_sid = serializers.CharField(required=False, allow_null=True)
+    business_type_picker_sent = serializers.BooleanField(required=False)
     tts_enqueued = serializers.BooleanField(required=False)
     duplicate_detected = serializers.BooleanField(required=False)
     llm_parse_failed = serializers.BooleanField(required=False)
@@ -360,6 +365,11 @@ class ExtractResponseSerializer(serializers.Serializer):
     duplicate_or_locked = serializers.BooleanField(required=False)
     lock_timeout = serializers.BooleanField(required=False)
     conversation_state = serializers.CharField(required=False, allow_null=True)
+    option_template = serializers.CharField(required=False, allow_null=True)
+    qualification_step = serializers.CharField(required=False, allow_null=True)
+    language = serializers.CharField(required=False)
+    qualification_complete = serializers.BooleanField(required=False)
+    should_send_qualification_question = serializers.BooleanField(required=False)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -388,6 +398,16 @@ class ExtractResponseSerializer(serializers.Serializer):
             "duplicate_or_locked",
             "lock_timeout",
             "conversation_state",
+            "option_template",
+            "followup_delay_seconds",
+            "existing_customer_followup_scheduled",
+            "existing_customer_followup_sent",
+            "business_type_content_sid",
+            "business_type_picker_sent",
+            "qualification_step",
+            "language",
+            "qualification_complete",
+            "should_send_qualification_question",
         ):
             if optional_key not in instance:
                 data.pop(optional_key, None)

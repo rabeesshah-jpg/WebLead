@@ -25,6 +25,7 @@ from apps.qualification.api.exceptions import (
 from apps.qualification.api.logging import (
     log_qualification_request_event,
     log_service_unavailable,
+    log_unexpected_error,
     log_upstream_request_failed,
 )
 from apps.qualification.api.permissions import InternalWebhookSecretPermission, VoiceEventSecretPermission
@@ -52,6 +53,9 @@ from apps.qualification.qualification_turn import (
     QualificationTurnProcessingError,
 )
 from apps.qualification.services.extract_service import ExtractService
+from apps.qualification.services.existing_customer_live_agent_service import (
+    ExistingCustomerHandoffError,
+)
 from apps.qualification.services.language_gate_service import (
     LanguageGateConfigurationError,
     LanguageGateSendError,
@@ -168,16 +172,19 @@ class ExtractAPIView(APIView):
         except LanguageGateSendError as exc:
             log_upstream_request_failed(request, exc, turn_request=turn_request)
             return error_response(SERVICE_REQUEST_FAILED_ERROR, 502)
+        except ExistingCustomerHandoffError as exc:
+            log_upstream_request_failed(request, exc, turn_request=turn_request)
+            return error_response(SERVICE_REQUEST_FAILED_ERROR, 502)
         except ExtractStepFailure as exc:
             return error_response(exc.info.public_message, 502)
         except QualificationServiceRequestError as exc:
             log_upstream_request_failed(request, exc, turn_request=turn_request)
             return error_response(QUALIFICATION_LLM_REQUEST_FAILED_ERROR, 502)
-        except QualificationTurnProcessingError:
-            log_qualification_request_event(request, "qualification_internal_unexpected_error", level=logging.ERROR)
+        except QualificationTurnProcessingError as exc:
+            log_unexpected_error(request, exc, turn_request=turn_request)
             return error_response(INTERNAL_SERVER_ERROR, 500)
-        except Exception:
-            log_qualification_request_event(request, "qualification_internal_unexpected_error", level=logging.ERROR)
+        except Exception as exc:
+            log_unexpected_error(request, exc, turn_request=turn_request)
             return error_response(INTERNAL_SERVER_ERROR, 500)
 
         response_serializer = ExtractResponseSerializer(instance=result)
@@ -187,7 +194,18 @@ class ExtractAPIView(APIView):
             api_total_ms,
             message_sid=message_sid,
         )
-        if result.get("status") in ("awaiting_language_selection", "awaiting_menu_selection"):
+        if result.get("status") in (
+            "awaiting_language_selection",
+            "awaiting_menu_selection",
+            "waiting_for_live_agent",
+        ):
+            log_qualification_request_event(
+                request,
+                "qualification_internal_response",
+                message_sid=message_sid,
+                final_http_status=200,
+                reply_text_present=bool(result.get("reply_text")),
+            )
             return Response(result, status=200)
 
         if (
@@ -199,6 +217,13 @@ class ExtractAPIView(APIView):
                 step_durations=get_tracked_step_durations(),
                 extract_api_total_ms=api_total_ms,
             )
+        log_qualification_request_event(
+            request,
+            "qualification_internal_response",
+            message_sid=message_sid,
+            final_http_status=200,
+            reply_text_present=bool(result.get("reply_text")),
+        )
         return Response(response_serializer.data, status=200)
 
 

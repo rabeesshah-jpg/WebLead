@@ -22,7 +22,7 @@ def test_system_prompt_contains_core_rules():
     assert "new_website" in EXTRACTION_SYSTEM_PROMPT
     assert "website_upgrade" in EXTRACTION_SYSTEM_PROMPT
     assert "human_handoff_requested" in EXTRACTION_SYSTEM_PROMPT
-    assert "phone_confirmation_question_asked=true" in EXTRACTION_SYSTEM_PROMPT
+    assert "Never ask the customer to confirm their phone number" in EXTRACTION_SYSTEM_PROMPT
     assert "minified JSON" in EXTRACTION_SYSTEM_PROMPT
     assert "Never generate booking links" in EXTRACTION_SYSTEM_PROMPT
 

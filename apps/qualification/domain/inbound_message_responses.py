@@ -139,9 +139,13 @@ def build_small_talk_reply(
 
 
 _CAPTURE_TRANSITION_KEYS: dict[str, str] = {
-    "project_type": "after_project_type_captured",
-    "requirements": "after_requirements_captured",
+    "customer_type": "after_customer_type_captured",
     "referral_source": "after_referral_source_captured",
+    "business_type": "after_numbered_option_captured",
+    "website_status": "after_numbered_option_captured",
+    "paid_ads": "after_numbered_option_captured",
+    "main_goal": "after_numbered_option_captured",
+    "launch_timeline": "after_numbered_option_captured",
 }
 
 

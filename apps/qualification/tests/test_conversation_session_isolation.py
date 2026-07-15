@@ -140,6 +140,7 @@ def test_restart_clears_one_customer_without_affecting_another():
     assert get_accepted_fields(USER_B)["project_type"] == "website_upgrade"
     assert session_a.menu_pending is False
     assert session_a.human_handoff_requested_at is None
+    assert session_a.language is None
     assert session_b.menu_pending is False
 
 

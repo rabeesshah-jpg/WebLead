@@ -209,6 +209,121 @@ def test_ensure_booking_link_delivery_preserves_inline_url():
     assert BOOKING_LINK in updated["reply_text"]
     assert updated["send_booking_link"] is True
     assert updated["booking_link_sent"] is True
+    assert updated["conversation_state"] == "BOOKING_LINK_SENT"
+
+
+@override_settings(BOOKING_LINK=BOOKING_LINK)
+def test_ensure_booking_link_delivery_inline_url_persists_session_markers():
+    """Inline booking URL must stamp booking_link_sent_at and qualified_at."""
+    from apps.qualification.services.booking_link_delivery_service import (
+        ensure_booking_link_delivery_on_response,
+    )
+
+    payload = {
+        "qualification_status": "completed",
+        "reply_text": TEXT_COMPLETION_WITH_LINK,
+        "whatsapp_text": TEXT_COMPLETION_WITH_LINK,
+        "spoken_text": VOICE_COMPLETION_SPOKEN,
+        "send_booking_link": True,
+        "booking_link_sent": True,
+        "booking_link": BOOKING_LINK,
+        "conversation_language": "en",
+    }
+    ensure_booking_link_delivery_on_response(
+        payload,
+        whatsapp_number=WHATSAPP_NUMBER,
+        message_sid="SM0cc5a1d9e22bf9850ca24261ee23cec1",
+        input_channel="whatsapp_text",
+    )
+
+    session = WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER)
+    assert session.booking_link_sent_at is not None
+    assert session.qualified_at is not None
+
+
+@override_settings(BOOKING_LINK=BOOKING_LINK)
+def test_ensure_booking_link_delivery_inline_url_logs_persisted_event(caplog):
+    from apps.qualification.services.booking_link_delivery_service import (
+        ensure_booking_link_delivery_on_response,
+    )
+
+    payload = {
+        "qualification_status": "completed",
+        "reply_text": TEXT_COMPLETION_WITH_LINK,
+        "whatsapp_text": TEXT_COMPLETION_WITH_LINK,
+        "spoken_text": VOICE_COMPLETION_SPOKEN,
+        "send_booking_link": True,
+        "booking_link_sent": True,
+        "booking_link": BOOKING_LINK,
+        "conversation_language": "en",
+    }
+    with caplog.at_level(logging.INFO, logger="apps.qualification"):
+        ensure_booking_link_delivery_on_response(
+            payload,
+            whatsapp_number=WHATSAPP_NUMBER,
+            message_sid="SM0cc5a1d9e22bf9850ca24261ee23cec2",
+            input_channel="whatsapp_text",
+        )
+
+    sent_events = [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.message.startswith("{")
+        and json.loads(record.message).get("event") == "booking_link_sent"
+        and json.loads(record.message).get("delivery") == "whatsapp_text_inline"
+    ]
+    assert len(sent_events) == 1
+    assert sent_events[0]["persisted_to_session"] is True
+    assert sent_events[0]["booking_link_sent_after"] is True
+
+
+@override_settings(BOOKING_LINK=BOOKING_LINK)
+def test_inline_booking_url_customer_detected_as_existing_after_idle_reset():
+    """qualified_at survives idle reset so the number is detected as existing."""
+    from apps.qualification.services.booking_link_delivery_service import (
+        ensure_booking_link_delivery_on_response,
+    )
+    from apps.qualification.services.conversation_restart_service import (
+        reset_qualification_progress_after_inactivity,
+    )
+    from apps.qualification.services.conversation_session_service import (
+        get_or_create_conversation_session,
+    )
+    from apps.qualification.services.existing_customer_detection import (
+        DETECTION_SOURCE_SESSION,
+        detect_existing_customer,
+    )
+
+    _seed_completed_qualification()
+    payload = {
+        "qualification_status": "completed",
+        "reply_text": TEXT_COMPLETION_WITH_LINK,
+        "whatsapp_text": TEXT_COMPLETION_WITH_LINK,
+        "send_booking_link": True,
+        "booking_link_sent": True,
+        "booking_link": BOOKING_LINK,
+        "conversation_language": "en",
+    }
+    ensure_booking_link_delivery_on_response(
+        payload,
+        whatsapp_number=WHATSAPP_NUMBER,
+        message_sid="SM0cc5a1d9e22bf9850ca24261ee23cec3",
+        input_channel="whatsapp_text",
+    )
+
+    session, _ = get_or_create_conversation_session(whatsapp_number=WHATSAPP_NUMBER)
+    reset_qualification_progress_after_inactivity(
+        whatsapp_number=WHATSAPP_NUMBER,
+        session=session,
+    )
+
+    session.refresh_from_db()
+    assert session.booking_link_sent_at is None
+    assert session.qualified_at is not None
+
+    detection = detect_existing_customer(WHATSAPP_NUMBER)
+    assert detection.detected is True
+    assert detection.source == DETECTION_SOURCE_SESSION
 
 
 def test_deliver_booking_link_whatsapp_text_logs_delivery_event(caplog):

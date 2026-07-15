@@ -15,7 +15,6 @@ from apps.qualification.conversation_state import (
     get_accepted_fields,
     save_accepted_fields,
 )
-from apps.qualification.domain.messages import get_customer_message
 from apps.qualification.message_idempotency import clear_message_sid_cache
 from apps.qualification.models import WhatsAppConversationSession
 from apps.qualification.tests.internal_api_test_helpers import API_SECRET, internal_api_auth_headers
@@ -30,6 +29,7 @@ MENU_SETTINGS = {
     "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
     "TWILIO_WHATSAPP_MENU_CONTENT_SID": "HXtestmainmenucontentsid00000000",
     "LEAD_QUALIFICATION_ENABLED": True,
+    "SESSION_IDLE_RESET_SECONDS": 7200,
 }
 
 
@@ -88,8 +88,8 @@ def test_explicit_restart_clears_qualification_state(mock_extract, client):
 
     assert response.status_code == 200
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
-    assert body["next_field"] == "project_type"
-    assert body["reply_text"] == get_customer_message(language="en", key="restart_intro")
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER).language is None
     mock_extract.assert_not_called()
 
 
@@ -109,7 +109,10 @@ def test_explicit_restart_phrases_clear_state(mock_extract, client, restart_mess
     save_accepted_fields(WHATSAPP_NUMBER, {"project_type": "new_website"})
 
     response = _post_text(client, restart_message, message_sid=message_sid)
+    body = response.json()
 
     assert response.status_code == 200
     assert get_accepted_fields(WHATSAPP_NUMBER) == {}
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER).language is None
     mock_extract.assert_not_called()

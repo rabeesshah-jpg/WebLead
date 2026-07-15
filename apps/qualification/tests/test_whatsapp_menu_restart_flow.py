@@ -12,7 +12,6 @@ from django.utils import timezone
 from apps.qualification.conversation_state import (
     clear_conversations,
     get_accepted_fields,
-    get_conversation_history,
     save_accepted_fields,
 )
 from apps.qualification.domain.language_selection import LANGUAGE_ARABIC, LANGUAGE_ENGLISH
@@ -40,10 +39,12 @@ MENU_SETTINGS = {
     "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
     "TWILIO_WHATSAPP_MENU_CONTENT_SID": "HXtestmainmenucontentsid00000000",
     "LEAD_QUALIFICATION_ENABLED": True,
+    "SESSION_IDLE_RESET_SECONDS": 7200,
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
 }
 
 IN_PROGRESS_FIELDS = {
+    "customer_type": "new_customer",
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
     "referral_source": "Google",
@@ -208,12 +209,10 @@ def test_restart_command_clears_state(client):
 
     assert response.status_code == 200
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == {}
-    assert get_conversation_history(VALID_WHATSAPP_NUMBER)
-    assert body["next_field"] == "project_type"
-    assert body["qualification_status"] == "in_progress"
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ARABIC, key="restart_intro")
-    assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language == LANGUAGE_ARABIC
+    assert body["status"] == "awaiting_language_selection"
+    assert body["message"] == "Language selector sent."
+    session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
+    assert session.language is None
 
 
 @override_settings(**MENU_SETTINGS)
@@ -236,20 +235,20 @@ def test_list_picker_restart_clears_state(mock_send_menu: MagicMock, client):
 
     assert response.status_code == 200
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == {}
-    assert body["next_field"] == "project_type"
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ENGLISH, key="restart_intro")
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language is None
 
 
 @override_settings(**MENU_SETTINGS)
-def test_language_is_preserved_after_restart(client):
+def test_language_is_cleared_after_restart(client):
     _seed_session(language=LANGUAGE_ARABIC)
     save_accepted_fields(VALID_WHATSAPP_NUMBER, IN_PROGRESS_FIELDS)
 
     response = _post_extract(client, _text_payload(message="restart", message_sid="SM0cc5a1d9e22bf9850ca24261ee23cea1"))
     body = response.json()
 
-    assert body["conversation_language"] == LANGUAGE_ARABIC
-    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language == LANGUAGE_ARABIC
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language is None
 
 
 @override_settings(**MENU_SETTINGS)
@@ -327,14 +326,18 @@ def test_voice_note_transcript_restart_triggers_restart(
     assert response.status_code == 200
     assert body["transcript"] == "restart"
     assert get_accepted_fields(VALID_WHATSAPP_NUMBER) == {}
-    assert body["next_field"] == "project_type"
-    assert body["reply_text"] == get_customer_message(language=LANGUAGE_ENGLISH, key="restart_intro")
+    assert body["status"] == "awaiting_language_selection"
+    assert WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER).language is None
 
 
 @override_settings(**MENU_SETTINGS)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 def test_existing_normal_qualification_still_works(mock_extract, client):
     _seed_session()
+    save_accepted_fields(
+        VALID_WHATSAPP_NUMBER,
+        {"customer_type": "new_customer", "referral_source": "google"},
+    )
     mock_extract.return_value = QualificationFieldFilterResult(
         accepted_fields={"project_type": "new_website"},
         rejected_fields=(),
@@ -351,8 +354,9 @@ def test_existing_normal_qualification_still_works(mock_extract, client):
     body = response.json()
 
     assert response.status_code == 200
+    assert body.get("status") != "awaiting_language_selection"
+    assert body["accepted_fields"]["customer_type"] == "new_customer"
     assert body["accepted_fields"]["project_type"] == "new_website"
-    assert body["accepted_fields"]["requirements"] == "I need a new website for my bakery"
-    assert body["next_field"] == "referral_source"
+    assert body["next_field"] == "requirements"
     assert body["qualification_status"] == "in_progress"
     mock_extract.assert_not_called()

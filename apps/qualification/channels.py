@@ -14,6 +14,12 @@ from apps.qualification.domain.language_selection import (
     normalize_conversation_language,
 )
 from apps.qualification.domain.messages import get_customer_message
+from apps.qualification.domain.option_template_delivery import (
+    resolve_option_template,
+)
+from apps.qualification.domain.numbered_qualification import (
+    build_qualification_state_machine_fields,
+)
 from apps.qualification.domain.tts_safety import sanitize_spoken_text_for_tts
 from apps.qualification.domain.validators import normalize_whatsapp_session_number
 from apps.qualification.services.booking_link_delivery_service import (
@@ -174,6 +180,68 @@ def apply_outbound_channel_routing(
     return finalized
 
 
+def _attach_option_template(
+    finalized: dict[str, Any],
+    *,
+    input_channel: InputChannel,
+) -> dict[str, Any]:
+    """
+    Tell n8n which Twilio clickable template to send for the current question.
+
+    Text inbound sets ``option_template`` for referral_source (all customers) and
+    business_type (existing customers only). New-customer numbered questions and
+    voice notes must not trigger clickable templates.
+    """
+    next_field = finalized.get("next_field")
+    accepted_fields = finalized.get("accepted_fields")
+    if not isinstance(accepted_fields, dict):
+        accepted_fields = None
+    option_template = resolve_option_template(
+        next_field=str(next_field) if next_field is not None else None,
+        input_channel=input_channel,
+        qualification_status=str(finalized.get("qualification_status") or ""),
+        accepted_fields=accepted_fields,
+    )
+    if option_template is not None:
+        finalized["option_template"] = option_template
+    else:
+        finalized.pop("option_template", None)
+    return finalized
+
+
+def _apply_voice_option_spoken_copy(
+    finalized: dict[str, Any],
+    *,
+    language: str,
+    input_channel: InputChannel,
+) -> dict[str, Any]:
+    """Use natural spoken options for option-step questions on voice turns."""
+    next_field = finalized.get("next_field")
+    accepted_fields = finalized.get("accepted_fields")
+    if not isinstance(accepted_fields, dict):
+        accepted_fields = None
+    # List-picker / Twilio-handoff turns intentionally leave Body/spoken empty.
+    # Do not invent a ``{field}_voice`` message key for those responses.
+    if not str(finalized.get("reply_text") or finalized.get("spoken_text") or "").strip():
+        return finalized
+    if (
+        input_channel != "whatsapp_voice_note"
+        or finalized.get("qualification_status") != "in_progress"
+        or resolve_option_template(
+            next_field=str(next_field) if next_field is not None else None,
+            input_channel="whatsapp_text",
+            qualification_status=str(finalized.get("qualification_status") or ""),
+            accepted_fields=accepted_fields,
+        )
+        is None
+    ):
+        return finalized
+    spoken_key = str(finalized.get("option_spoken_message_key") or f"{next_field}_voice")
+    spoken = get_customer_message(language=language, key=spoken_key)
+    finalized["spoken_text"] = spoken
+    return finalized
+
+
 def finalize_turn_response(
     response: dict[str, Any],
     *,
@@ -240,14 +308,39 @@ def finalize_turn_response(
         finalized["booking_link"] = None
         finalized["contains_booking_url"] = False
 
+    finalized = _apply_voice_option_spoken_copy(
+        finalized,
+        language=language,
+        input_channel=input_channel,
+    )
+
     routed = apply_outbound_channel_routing(
         finalized,
         input_channel=input_channel,
+    )
+    routed = _attach_option_template(routed, input_channel=input_channel)
+    routed.pop("option_spoken_message_key", None)
+    routed.update(
+        build_qualification_state_machine_fields(
+            next_field=str(routed["next_field"]) if routed.get("next_field") else None,
+            qualification_status=str(routed.get("qualification_status") or ""),
+            conversation_language=language,
+            reply_text=str(routed.get("reply_text") or ""),
+            should_send_text=(
+                bool(routed.get("should_send_text"))
+                if "should_send_text" in routed
+                else None
+            ),
+        )
     )
 
     log_qualification_event(
         "outbound_channel_routing",
         input_channel=input_channel,
+        conversation_language=language,
+        option_template=routed.get("option_template"),
+        next_field=routed.get("next_field"),
+        qualification_step=routed.get("qualification_step"),
         has_media=input_channel == "whatsapp_voice_note",
         transcript_text=(transcript or "")[:120] if transcript else None,
         reply_text=str(routed.get("reply_text") or "")[:200],
