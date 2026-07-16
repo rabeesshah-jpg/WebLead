@@ -98,13 +98,21 @@ ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
 # SQLite local default; set DATABASE_URL for PostgreSQL (or other) in production.
-_DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "qualification.sqlite3"
-if not os.getenv("DATABASE_URL", "").strip():
-    _DEFAULT_SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Vercel serverless FS is read-only except /tmp — keep SQLite there when DATABASE_URL is unset.
+if os.getenv("DATABASE_URL", "").strip():
+    _default_db_url = None
+elif os.getenv("VERCEL") == "1":
+    _default_sqlite_path = Path("/tmp") / "qualification.sqlite3"
+    _default_db_url = f"sqlite:///{_default_sqlite_path.as_posix()}"
+else:
+    _default_sqlite_path = BASE_DIR / "data" / "qualification.sqlite3"
+    _default_sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    _default_db_url = f"sqlite:///{_default_sqlite_path.as_posix()}"
 
 DATABASES = {
     "default": dj_database_url.config(
-        default=f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}",
+        default=_default_db_url
+        or f"sqlite:///{(BASE_DIR / 'data' / 'qualification.sqlite3').as_posix()}",
         conn_max_age=600,
     )
 }
