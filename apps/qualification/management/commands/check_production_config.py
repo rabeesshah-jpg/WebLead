@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
@@ -13,6 +11,7 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         issues: list[str] = []
+        warnings: list[str] = []
 
         base_webhook_url = getattr(settings, "BASE_WEBHOOK_URL", "")
         public_media_base_url = getattr(settings, "PUBLIC_MEDIA_BASE_URL", "")
@@ -24,9 +23,6 @@ class Command(BaseCommand):
         self.stdout.write(
             f"QUALIFICATION_REDIS_URL: {'SET' if settings.QUALIFICATION_REDIS_URL else 'NOT SET'}"
         )
-        self.stdout.write(
-            f"REDIS_URL (env): {'SET' if os.getenv('REDIS_URL', '').strip() else 'NOT SET'}"
-        )
 
         if not base_webhook_url:
             issues.append("BASE_WEBHOOK_URL is required for stable n8n callback URLs.")
@@ -35,10 +31,13 @@ class Command(BaseCommand):
                 "PUBLIC_MEDIA_BASE_URL or BASE_WEBHOOK_URL is required for voice reply media URLs.",
             )
         if not settings.QUALIFICATION_REDIS_URL:
-            issues.append(
-                "QUALIFICATION_REDIS_URL or REDIS_URL is required for multi-worker "
-                "idempotency and conversation state.",
+            warnings.append(
+                "QUALIFICATION_REDIS_URL is unset; using process-local in-memory "
+                "persistence (OK for single-worker; set Redis for multi-worker).",
             )
+
+        for warning in warnings:
+            self.stdout.write(self.style.WARNING(warning))
 
         if issues:
             for issue in issues:

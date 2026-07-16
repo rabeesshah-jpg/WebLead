@@ -363,36 +363,14 @@ def _load_qualification_idempotency_processing_ttl_seconds() -> int:
     return ttl_seconds
 
 
-# Redis: empty REDIS_URL / QUALIFICATION_REDIS_URL keeps local in-memory persistence.
-# Set REDIS_URL (or QUALIFICATION_REDIS_URL) in production for shared state.
-_REDIS_URL_ENV = os.getenv("REDIS_URL", "").strip()
-_DEFAULT_REDIS_URL = "redis://127.0.0.1:6379/0"
-REDIS_URL = _REDIS_URL_ENV or _DEFAULT_REDIS_URL
-QUALIFICATION_REDIS_URL = (
-    env("QUALIFICATION_REDIS_URL", default="") or _REDIS_URL_ENV
-)
+# Optional Redis for multi-worker qualification persistence / locks / idempotency.
+# Empty keeps process-local in-memory backends (local/Vercel single-function fine).
+QUALIFICATION_REDIS_URL = env("QUALIFICATION_REDIS_URL", default="")
 QUALIFICATION_CONVERSATION_TTL_SECONDS = _load_qualification_conversation_ttl_seconds()
 QUALIFICATION_IDEMPOTENCY_TTL_SECONDS = _load_qualification_idempotency_ttl_seconds()
 QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS = (
     _load_qualification_idempotency_processing_ttl_seconds()
 )
-
-# Celery: durable delayed jobs (existing-customer Noura + Business Type picker).
-CELERY_BROKER_URL = (
-    os.getenv("CELERY_BROKER_URL", "").strip()
-    or os.getenv("REDIS_URL", _DEFAULT_REDIS_URL).strip()
-    or _DEFAULT_REDIS_URL
-)
-CELERY_RESULT_BACKEND = (
-    os.getenv("CELERY_RESULT_BACKEND", "").strip() or CELERY_BROKER_URL
-)
-CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
-CELERY_TASK_EAGER_PROPAGATES = env.bool("CELERY_TASK_EAGER_PROPAGATES", default=True)
-CELERY_TASK_TRACK_STARTED = True
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
 
 _QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS_ERROR = (
     "QUALIFICATION_CONVERSATION_LOCK_WAIT_SECONDS must be a positive number."

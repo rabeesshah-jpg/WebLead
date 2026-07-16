@@ -63,9 +63,6 @@ SEND_PATH = (
     ".send_whatsapp_text_message"
 )
 SLEEP_PATH = "apps.qualification.services.existing_customer_live_agent_service.time.sleep"
-CELERY_PATH = (
-    "apps.qualification.tasks.deliver_existing_customer_handoff_task.apply_async"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -195,12 +192,11 @@ def test_known_existing_customer_sends_connecting_then_noura_after_sleep(
     number = "+923001110010"
     _make_qualified_session(number)
 
-    with patch(CELERY_PATH) as mock_scheduler:
-        turn = maybe_auto_detect_existing_customer(
-            whatsapp_number=number,
-            language="en",
-            input_channel="whatsapp_text",
-        )
+    turn = maybe_auto_detect_existing_customer(
+        whatsapp_number=number,
+        language="en",
+        input_channel="whatsapp_text",
+    )
 
     assert turn is not None
     assert turn["accepted_fields"]["customer_type"] == "existing_customer"
@@ -227,7 +223,6 @@ def test_known_existing_customer_sends_connecting_then_noura_after_sleep(
     mock_sleep.assert_called_once_with(5)
     # Sleep must happen after the connecting send succeeds.
     assert mock_twilio_send.call_args_list[0][1]["body"] == EN_CONNECTING
-    mock_scheduler.assert_not_called()
 
     session = WhatsAppConversationSession.objects.get(whatsapp_number=number)
     assert session.existing_customer_connecting_sent_at is not None
@@ -516,12 +511,11 @@ def test_voice_new_customer_uses_spoken_intro_without_option_template(
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch(CELERY_PATH)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch(SLEEP_PATH)
 @patch(SEND_PATH, side_effect=["SMconnecting001", "SMnoura002"])
 def test_api_known_existing_customer_runs_sync_handoff(
-    mock_send, mock_sleep, mock_extract, mock_scheduler, client
+    mock_send, mock_sleep, mock_extract, client
 ):
     number = "+923001110030"
     _make_qualified_session(number)
@@ -541,7 +535,6 @@ def test_api_known_existing_customer_runs_sync_handoff(
     assert body["human_handoff_requested"] is False
     assert "How did you hear about us?" not in (body.get("reply_text") or "")
     mock_extract.assert_not_called()
-    mock_scheduler.assert_not_called()
     mock_sleep.assert_called_once_with(5)
     assert mock_send.call_count == 2
 
@@ -587,12 +580,11 @@ def test_api_customer_type_question_never_returned(
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch(CELERY_PATH)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch(SLEEP_PATH)
 @patch(SEND_PATH, side_effect=["SMconnecting001", "SMnoura002"])
 def test_duplicate_webhook_does_not_resend_messages(
-    mock_send, mock_sleep, mock_extract, mock_scheduler, client
+    mock_send, mock_sleep, mock_extract, client
 ):
     number = "+923001110050"
     _make_qualified_session(number)
@@ -608,7 +600,6 @@ def test_duplicate_webhook_does_not_resend_messages(
     # MessageSid idempotency returns the cached payload; Twilio is not called again.
     assert mock_send.call_count == 2
     mock_sleep.assert_called_once_with(5)
-    mock_scheduler.assert_not_called()
     mock_extract.assert_not_called()
 
     session = WhatsAppConversationSession.objects.get(whatsapp_number=number)
@@ -616,12 +607,11 @@ def test_duplicate_webhook_does_not_resend_messages(
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch(CELERY_PATH)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch(SLEEP_PATH)
 @patch(SEND_PATH, side_effect=["SMconnecting001", "SMnoura002", "SMextra1", "SMextra2"])
 def test_second_distinct_webhook_does_not_resend_either_message(
-    mock_send, mock_sleep, mock_extract, mock_scheduler, client
+    mock_send, mock_sleep, mock_extract, client
 ):
     number = "+923001110053"
     _make_qualified_session(number)
@@ -646,16 +636,14 @@ def test_second_distinct_webhook_does_not_resend_either_message(
     # Second inbound must not re-run connecting/sleep/noura.
     assert mock_send.call_count == 2
     mock_sleep.assert_called_once_with(5)
-    mock_scheduler.assert_not_called()
 
 
 @override_settings(N8N_QUALIFICATION_API_SECRET=API_SECRET, BOOKING_LINK=BOOKING_LINK)
-@patch(CELERY_PATH)
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
 @patch(SLEEP_PATH)
 @patch(SEND_PATH, side_effect=["SMconnecting001", "SMnoura002"])
-def test_no_celery_task_scheduled_for_existing_customer_flow(
-    mock_send, mock_sleep, mock_extract, mock_scheduler, client
+def test_existing_customer_flow_runs_inline_without_background_queue(
+    mock_send, mock_sleep, mock_extract, client
 ):
     number = "+923001110052"
     _make_qualified_session(number)
@@ -663,7 +651,6 @@ def test_no_celery_task_scheduled_for_existing_customer_flow(
     body = _post(client, "hello", number=number)
     assert body["conversation_state"] == "WAITING_FOR_BUSINESS_TYPE"
     assert body["should_send_qualification_question"] is True
-    mock_scheduler.assert_not_called()
     mock_sleep.assert_called_once_with(5)
     assert mock_send.call_count == 2
 
