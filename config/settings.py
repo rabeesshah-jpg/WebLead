@@ -25,17 +25,56 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default=_DEV_SECRET_KEY)
 
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-    if host.strip()
-]
+
+def _parse_host_list(raw: str) -> list[str]:
+    """Parse comma-separated hosts; strip whitespace and accidental schemes."""
+    hosts: list[str] = []
+    for part in (raw or "").split(","):
+        host = part.strip()
+        if not host:
+            continue
+        if "://" in host:
+            host = host.split("://", 1)[1]
+        host = host.split("/", 1)[0].strip()
+        if host and host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
+ALLOWED_HOSTS = _parse_host_list(
+    os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1"),
+)
+
+# Vercel injects a unique host per deployment (including Preview hashes).
+# Dashboard ALLOWED_HOSTS often lists only the stable production alias, which does
+# not match hosts like "<app>-<hash>-<team>.vercel.app".
+_vercel_url = (os.getenv("VERCEL_URL") or "").strip()
+if _vercel_url:
+    _vercel_host = _parse_host_list(_vercel_url)
+    for host in _vercel_host:
+        if host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
+if os.getenv("VERCEL") == "1" and ".vercel.app" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(".vercel.app")
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+
+# Safe boot diagnostics (no secrets). Visible in Vercel function logs.
+print(
+    "DJANGO_BOOT",
+    {
+        "settings_module": os.environ.get("DJANGO_SETTINGS_MODULE"),
+        "debug": DEBUG,
+        "allowed_hosts": ALLOWED_HOSTS,
+        "vercel_env": os.getenv("VERCEL_ENV", ""),
+        "vercel_url_set": bool(_vercel_url),
+        "allowed_hosts_env_set": bool(os.getenv("ALLOWED_HOSTS", "").strip()),
+    },
+)
 
 if (
     not DEBUG
