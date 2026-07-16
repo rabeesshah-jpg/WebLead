@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+data/
+.pytest_cache/
+*.log
+
+# Local-only files
+.env
+.venv/
+media/
+
+# Local Cursor workspace files
+.cursor/
