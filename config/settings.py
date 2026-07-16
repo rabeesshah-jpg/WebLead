@@ -63,19 +63,6 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
-# Safe boot diagnostics (no secrets). Visible in Vercel function logs.
-print(
-    "DJANGO_BOOT",
-    {
-        "settings_module": os.environ.get("DJANGO_SETTINGS_MODULE"),
-        "debug": DEBUG,
-        "allowed_hosts": ALLOWED_HOSTS,
-        "vercel_env": os.getenv("VERCEL_ENV", ""),
-        "vercel_url_set": bool(_vercel_url),
-        "allowed_hosts_env_set": bool(os.getenv("ALLOWED_HOSTS", "").strip()),
-    },
-)
-
 if (
     not DEBUG
     and SECRET_KEY == _DEV_SECRET_KEY
