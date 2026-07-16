@@ -1,24 +1,50 @@
 """WebLead Django settings."""
 
+from __future__ import annotations
+
+import os
 from pathlib import Path
 
+import dj_database_url
 import environ
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    DEBUG=(bool, False),
     N8N_FORWARD_TIMEOUT_SECONDS=(int, 5),
 )
 
+# Load .env into os.environ so os.getenv / dj_database_url see the same values.
 env_file = BASE_DIR / ".env"
 if env_file.exists():
     environ.Env.read_env(str(env_file))
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="weblead-dev-secret-change-me")
-DEBUG = env.bool("DEBUG", default=False)
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+_DEV_SECRET_KEY = "weblead-dev-secret-change-me"
+SECRET_KEY = env("DJANGO_SECRET_KEY", default=_DEV_SECRET_KEY)
+
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+if (
+    not DEBUG
+    and SECRET_KEY == _DEV_SECRET_KEY
+    and not os.getenv("DJANGO_SETTINGS_MODULE", "").endswith("settings_test")
+):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be set to a non-default value when DEBUG is False."
+    )
 
 INSTALLED_APPS = [
     "apps.webhooks.apps.WebhooksConfig",
@@ -45,11 +71,16 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
+# SQLite local default; set DATABASE_URL for PostgreSQL (or other) in production.
+_DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "qualification.sqlite3"
+if not os.getenv("DATABASE_URL", "").strip():
+    _DEFAULT_SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "data" / "qualification.sqlite3",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}",
+        conn_max_age=600,
+    )
 }
 
 LANGUAGE_CODE = "en-us"
@@ -74,14 +105,14 @@ TWILIO_WHATSAPP_MENU_CONTENT_SID = (
 )
 # WhatsApp sender used when sending Content API messages (optional until outbound send is wired).
 TWILIO_WHATSAPP_FROM_NUMBER = env("TWILIO_WHATSAPP_FROM_NUMBER", default="")
-# Business Type list-picker Content SIDs (English / Arabic).
+# Business Type list-picker Content SIDs (English / Arabic). Set via env in each deploy.
 TWILIO_BUSINESS_TYPE_CONTENT_SID_EN = env(
     "TWILIO_BUSINESS_TYPE_CONTENT_SID_EN",
-    default="HX90d7ec0824c2a0fcc066f69c5696f1cd",
+    default="",
 )
 TWILIO_BUSINESS_TYPE_CONTENT_SID_AR = env(
     "TWILIO_BUSINESS_TYPE_CONTENT_SID_AR",
-    default="HX666fdbe4a262136dfcc820d32e80795f",
+    default="",
 )
 # Master switch for WhatsApp lead qualification flows (menu, inactivity, extraction).
 LEAD_QUALIFICATION_ENABLED = env.bool("LEAD_QUALIFICATION_ENABLED", default=True)
@@ -293,7 +324,14 @@ def _load_qualification_idempotency_processing_ttl_seconds() -> int:
     return ttl_seconds
 
 
-QUALIFICATION_REDIS_URL = env("QUALIFICATION_REDIS_URL", default="")
+# Redis: empty REDIS_URL / QUALIFICATION_REDIS_URL keeps local in-memory persistence.
+# Set REDIS_URL (or QUALIFICATION_REDIS_URL) in production for shared state.
+_REDIS_URL_ENV = os.getenv("REDIS_URL", "").strip()
+_DEFAULT_REDIS_URL = "redis://127.0.0.1:6379/0"
+REDIS_URL = _REDIS_URL_ENV or _DEFAULT_REDIS_URL
+QUALIFICATION_REDIS_URL = (
+    env("QUALIFICATION_REDIS_URL", default="") or _REDIS_URL_ENV
+)
 QUALIFICATION_CONVERSATION_TTL_SECONDS = _load_qualification_conversation_ttl_seconds()
 QUALIFICATION_IDEMPOTENCY_TTL_SECONDS = _load_qualification_idempotency_ttl_seconds()
 QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS = (
@@ -301,9 +339,14 @@ QUALIFICATION_IDEMPOTENCY_PROCESSING_TTL_SECONDS = (
 )
 
 # Celery: durable delayed jobs (existing-customer Noura + Business Type picker).
-_CELERY_BROKER_DEFAULT = QUALIFICATION_REDIS_URL or "redis://127.0.0.1:6379/0"
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="") or _CELERY_BROKER_DEFAULT
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="") or CELERY_BROKER_URL
+CELERY_BROKER_URL = (
+    os.getenv("CELERY_BROKER_URL", "").strip()
+    or os.getenv("REDIS_URL", _DEFAULT_REDIS_URL).strip()
+    or _DEFAULT_REDIS_URL
+)
+CELERY_RESULT_BACKEND = (
+    os.getenv("CELERY_RESULT_BACKEND", "").strip() or CELERY_BROKER_URL
+)
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_TASK_EAGER_PROPAGATES = env.bool("CELERY_TASK_EAGER_PROPAGATES", default=True)
 CELERY_TASK_TRACK_STARTED = True

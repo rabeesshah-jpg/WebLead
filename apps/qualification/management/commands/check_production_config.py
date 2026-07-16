@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
@@ -22,6 +24,9 @@ class Command(BaseCommand):
         self.stdout.write(
             f"QUALIFICATION_REDIS_URL: {'SET' if settings.QUALIFICATION_REDIS_URL else 'NOT SET'}"
         )
+        self.stdout.write(
+            f"REDIS_URL (env): {'SET' if os.getenv('REDIS_URL', '').strip() else 'NOT SET'}"
+        )
 
         if not base_webhook_url:
             issues.append("BASE_WEBHOOK_URL is required for stable n8n callback URLs.")
@@ -31,7 +36,8 @@ class Command(BaseCommand):
             )
         if not settings.QUALIFICATION_REDIS_URL:
             issues.append(
-                "QUALIFICATION_REDIS_URL is required for multi-worker idempotency and conversation state.",
+                "QUALIFICATION_REDIS_URL or REDIS_URL is required for multi-worker "
+                "idempotency and conversation state.",
             )
 
         if issues:

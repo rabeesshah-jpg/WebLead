@@ -18,10 +18,6 @@ from apps.qualification.integrations.twilio_whatsapp_message import (
 
 logger = logging.getLogger("apps.qualification")
 
-# Defaults match the Twilio Content templates configured for production.
-DEFAULT_BUSINESS_TYPE_CONTENT_SID_EN = "HX90d7ec0824c2a0fcc066f69c5696f1cd"
-DEFAULT_BUSINESS_TYPE_CONTENT_SID_AR = "HX666fdbe4a262136dfcc820d32e80795f"
-
 
 class TwilioBusinessTypePickerConfigurationError(TwilioWhatsAppConfigurationError):
     """Raised when Business Type Content SID settings are incomplete."""
@@ -35,14 +31,8 @@ def resolve_business_type_content_sid(language: str) -> str:
     """Return the Twilio Content SID for the Business Type list picker."""
     normalized = normalize_conversation_language(language)
     if normalized == LANGUAGE_ARABIC:
-        return (
-            getattr(settings, "TWILIO_BUSINESS_TYPE_CONTENT_SID_AR", "")
-            or DEFAULT_BUSINESS_TYPE_CONTENT_SID_AR
-        )
-    return (
-        getattr(settings, "TWILIO_BUSINESS_TYPE_CONTENT_SID_EN", "")
-        or DEFAULT_BUSINESS_TYPE_CONTENT_SID_EN
-    )
+        return (getattr(settings, "TWILIO_BUSINESS_TYPE_CONTENT_SID_AR", "") or "").strip()
+    return (getattr(settings, "TWILIO_BUSINESS_TYPE_CONTENT_SID_EN", "") or "").strip()
 
 
 def _validate_send_configuration(*, language: str) -> str:

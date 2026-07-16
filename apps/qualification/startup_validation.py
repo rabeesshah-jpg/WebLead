@@ -46,8 +46,8 @@ def validate_qualification_startup_config() -> None:
             json_event(
                 "qualification_startup_inmemory_persistence",
                 message=(
-                    "QUALIFICATION_REDIS_URL is not configured; conversation state and "
-                    "MessageSid idempotency are process-local only."
+                    "QUALIFICATION_REDIS_URL / REDIS_URL is not configured; conversation "
+                    "state and MessageSid idempotency are process-local only."
                 ),
             ),
         )
