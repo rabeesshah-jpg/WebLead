@@ -90,12 +90,17 @@ def log_signature_validation_failed(
     logger.warning(json.dumps(payload, separators=(",", ":")))
 
 
-def log_n8n_forward_failed(request: HttpRequest) -> None:
+def log_n8n_forward_failed(
+    request: HttpRequest,
+    *,
+    error: str | None = None,
+) -> None:
     params = twilio_post_params(request)
     payload = {
         "event": "n8n_forward_failed",
         "timestamp": timezone.now().isoformat(),
         "request_path": request.path,
         "message_sid_prefix": message_sid_prefix(params),
+        "error": (error or "")[:500] or None,
     }
     logger.error(json.dumps(payload, separators=(",", ":")))

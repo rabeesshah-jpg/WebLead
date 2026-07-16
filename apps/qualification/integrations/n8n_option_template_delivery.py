@@ -25,11 +25,11 @@ def _resolve_webhook_url() -> str:
         return dedicated
     # Reuse the production WhatsApp webhook when a dedicated outbound URL is unset;
     # n8n must branch on event=option_template_delivery / option_template.
-    inbound = (getattr(settings, "N8N_WHATSAPP_WEBHOOK_URL", "") or "").strip()
+    inbound = (getattr(settings, "N8N_WEBHOOK_URL", "") or "").strip()
     if inbound:
         return inbound
     raise N8nOptionTemplateDeliveryError(
-        "N8N_OPTION_TEMPLATE_WEBHOOK_URL (or N8N_WHATSAPP_WEBHOOK_URL) is not configured",
+        "N8N_OPTION_TEMPLATE_WEBHOOK_URL (or N8N_WEBHOOK_URL) is not configured",
     )
 
 

@@ -184,12 +184,16 @@ def _load_twilio_media_max_bytes() -> int:
 
 
 TWILIO_MEDIA_MAX_BYTES = _load_twilio_media_max_bytes()
-N8N_WHATSAPP_WEBHOOK_URL = env("N8N_WHATSAPP_WEBHOOK_URL", default="")
+# n8n production WhatsApp inbound webhook (Django forwards Twilio form POSTs here).
+# Prefer N8N_WEBHOOK_URL; N8N_WHATSAPP_WEBHOOK_URL is accepted as a legacy alias only.
+N8N_WEBHOOK_URL = (
+    env("N8N_WEBHOOK_URL", default="") or env("N8N_WHATSAPP_WEBHOOK_URL", default="")
+).strip()
 N8N_WEBHOOK_SECRET = env("N8N_WEBHOOK_SECRET", default="")
 N8N_FORWARD_TIMEOUT_SECONDS = env.int("N8N_FORWARD_TIMEOUT_SECONDS", default=5)
 N8N_QUALIFICATION_API_SECRET = env("N8N_QUALIFICATION_API_SECRET", default="")
 # Optional dedicated webhook for delayed option_template delivery (JSON). Falls back
-# to N8N_WHATSAPP_WEBHOOK_URL; n8n must Switch on option_template=project_type.
+# to N8N_WEBHOOK_URL; n8n must Switch on option_template=project_type.
 N8N_OPTION_TEMPLATE_WEBHOOK_URL = env("N8N_OPTION_TEMPLATE_WEBHOOK_URL", default="")
 WEBLEAD_VOICE_EVENT_SECRET = env("WEBLEAD_VOICE_EVENT_SECRET", default="")
 

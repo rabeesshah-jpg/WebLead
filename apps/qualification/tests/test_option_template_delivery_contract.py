@@ -117,7 +117,7 @@ def test_request_n8n_option_template_posts_json_contract(mock_urlopen):
 
 @override_settings(
     N8N_OPTION_TEMPLATE_WEBHOOK_URL="",
-    N8N_WHATSAPP_WEBHOOK_URL="",
+    N8N_WEBHOOK_URL="",
 )
 def test_request_n8n_option_template_requires_webhook_url():
     contract = build_option_template_delivery_contract(

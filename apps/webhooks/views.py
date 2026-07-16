@@ -26,8 +26,8 @@ def twilio_whatsapp_inbound(request: HttpRequest) -> HttpResponse:
     params = twilio_post_params(request)
     try:
         forward_to_n8n(params)
-    except N8nForwardError:
-        log_n8n_forward_failed(request)
+    except N8nForwardError as exc:
+        log_n8n_forward_failed(request, error=str(exc))
         return HttpResponse(status=502)
 
     return HttpResponse(status=200)
