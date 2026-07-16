@@ -118,13 +118,23 @@ def log_unexpected_error(
     turn_request: TurnRequestContext | None = None,
 ) -> None:
     """Log unexpected extract failures with full traceback for operators."""
+    import traceback
+
+    tb = traceback.extract_tb(exc.__traceback__)
+    last_frame = tb[-1] if tb else None
     context = {
         "event": "qualification_internal_unexpected_error",
         "request_path": request.path,
         "failure_type": safe_failure_type(exc),
+        "error_message": str(exc)[:500],
+        "exception_type": type(exc).__name__,
         "timestamp": timezone.now().isoformat(),
         **_turn_request_context(turn_request),
     }
+    if last_frame is not None:
+        context["error_file"] = last_frame.filename
+        context["error_line"] = last_frame.lineno
+        context["error_function"] = last_frame.name
     logger.exception(
         json.dumps(context, separators=(",", ":"), default=str),
     )
