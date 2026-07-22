@@ -63,3 +63,5 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 DJANGO_SETTINGS_MODULE=config.settings_test \
 .venv/bin/python -m pytest -p pytest_django -q
 ```
+const djangoNodeOutput =
+  $('Call Django Qualification API').first().json;

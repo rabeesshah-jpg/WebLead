@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
+from apps.qualification.api.logging import log_qualification_event
 from apps.qualification.conversation_state import get_accepted_fields, save_accepted_fields
 from apps.qualification.domain.language_selection import LANGUAGE_ENGLISH, normalize_conversation_language
 from apps.qualification.domain.messages import get_customer_message
@@ -39,9 +41,12 @@ from apps.qualification.domain.qualification_options import (
 from apps.qualification.domain.numbered_qualification import (
     NUMBERED_QUALIFICATION_FIELDS,
     apply_numbered_selection,
+    canonicalize_numbered_fields,
     compose_requirements_summary,
+    expected_option_tokens_for_field,
     has_numbered_qualification_answer,
     is_numbered_qualification_field,
+    match_incoming_option_to_prior_step,
     normalize_numbered_qualification_answer,
 )
 from apps.qualification.domain.validators import (
@@ -49,6 +54,8 @@ from apps.qualification.domain.validators import (
     is_valid_e164_phone_number,
 )
 from apps.qualification.models import QualificationFieldFilterResult
+
+logger = logging.getLogger("apps.qualification")
 
 QualificationStatus = Literal["in_progress", "completed", "human_handoff"]
 
@@ -355,18 +362,28 @@ def try_handle_qualification_step_turn(
     """
     Capture menu option steps: customer_type, referral_source, numbered questions.
 
-    Numbered qualification questions accept numeric replies or same-step option
-    IDs (including list-picker ``button_payload`` values). Unrecognized answers
-    re-ask the current question with its options. Booking follows the final
-    numbered answer.
+    Numbered qualification questions accept numeric replies, same-step option
+    IDs, and Twilio list-picker item IDs (``Body`` or ``button_payload``, e.g.
+    ``local_service``). Unrecognized answers re-ask the current question with
+    its options. Booking follows the final numbered answer.
     """
     del for_voice  # Same normalization path for text and transcribed voice.
     persisted_fields = get_accepted_fields(whatsapp_number)
+    normalized_language = normalize_conversation_language(language)
+    # Repair any Twilio aliases previously stored as-is so answered steps are skipped.
+    canonical_fields = canonicalize_numbered_fields(
+        persisted_fields,
+        language=normalized_language,
+    )
+    if canonical_fields != persisted_fields:
+        save_accepted_fields(whatsapp_number, canonical_fields)
+        persisted_fields = canonical_fields
+
     next_field = _next_missing_field(persisted_fields)
     if next_field not in DETERMINISTIC_OPTION_FIELDS:
         return None
 
-    normalized_language = normalize_conversation_language(language)
+    received_option_value = (button_payload or message or "").strip() or None
     value = _normalize_step_value(
         next_field,
         message,
@@ -375,6 +392,59 @@ def try_handle_qualification_step_turn(
     )
 
     if value is None:
+        stale_candidates = tuple(
+            candidate
+            for candidate in (received_option_value, message, button_payload)
+            if isinstance(candidate, str) and candidate.strip()
+        )
+        matched_previous_step = None
+        for candidate in stale_candidates:
+            matched_previous_step = match_incoming_option_to_prior_step(
+                incoming=candidate,
+                current_field=next_field,
+                answered_fields=persisted_fields,
+                prior_fields=DETERMINISTIC_OPTION_FIELDS,
+            )
+            if matched_previous_step is not None:
+                received_option_value = candidate.strip()
+                break
+
+        if matched_previous_step is not None:
+            current_state = f"WAITING_FOR_{next_field.upper()}"
+            log_qualification_event(
+                "stale_option_ignored",
+                current_state=current_state,
+                incoming_option=received_option_value,
+                expected_options=expected_option_tokens_for_field(next_field),
+                matched_previous_step=matched_previous_step,
+                next_field=next_field,
+            )
+            return _with_conversation_language(
+                {
+                    "accepted_fields": dict(persisted_fields),
+                    "rejected_fields": {},
+                    "human_handoff_requested": False,
+                    "next_field": next_field,
+                    "reply_text": "",
+                    "qualification_status": "in_progress",
+                    "preferred_phone": persisted_fields.get("preferred_phone"),
+                    "skip_onboarding_intro": True,
+                    "should_send_text": False,
+                    "should_send_qualification_question": False,
+                    "stale_option_ignored": True,
+                },
+                language=normalized_language,
+            )
+
+        if is_numbered_qualification_field(next_field):
+            logger.debug(
+                "numbered_qualification_option_parsed received_option_value=%r "
+                "mapped_field_value=%r updated_conversation_state=%s field=%s",
+                received_option_value,
+                None,
+                f"WAITING_FOR_{next_field.upper()}",
+                next_field,
+            )
         reply_text = get_qualification_question_text(
             language=normalized_language,
             field=next_field,
@@ -398,9 +468,25 @@ def try_handle_qualification_step_turn(
     merged_fields = dict(persisted_fields)
     if is_numbered_qualification_field(next_field) and isinstance(value, dict):
         merged_fields = apply_numbered_selection(merged_fields, next_field, value)
+        mapped_field_value = value.get("value")
     else:
         merged_fields[next_field] = value
+        mapped_field_value = value
     new_next_field = _next_missing_field(merged_fields)
+    updated_conversation_state = (
+        f"WAITING_FOR_{new_next_field.upper()}"
+        if new_next_field
+        else "QUALIFICATION_COMPLETE"
+    )
+    if is_numbered_qualification_field(next_field):
+        logger.debug(
+            "numbered_qualification_option_parsed received_option_value=%r "
+            "mapped_field_value=%r updated_conversation_state=%s field=%s",
+            received_option_value,
+            mapped_field_value,
+            updated_conversation_state,
+            next_field,
+        )
 
     if new_next_field is None:
         merged_fields = _finalize_numbered_qualification_fields(

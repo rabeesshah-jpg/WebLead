@@ -320,6 +320,11 @@ def finalize_turn_response(
     )
     routed = _attach_option_template(routed, input_channel=input_channel)
     routed.pop("option_spoken_message_key", None)
+    should_send_qualification_override = (
+        bool(routed.get("should_send_qualification_question"))
+        if "should_send_qualification_question" in routed
+        else None
+    )
     routed.update(
         build_qualification_state_machine_fields(
             next_field=str(routed["next_field"]) if routed.get("next_field") else None,
@@ -331,6 +336,7 @@ def finalize_turn_response(
                 if "should_send_text" in routed
                 else None
             ),
+            should_send_qualification_question=should_send_qualification_override,
         )
     )
 
