@@ -21,10 +21,10 @@ def log_voice_agent_config() -> None:
             deepgram_model=settings.DEEPGRAM_MODEL,
             deepgram_timeout_seconds=settings.DEEPGRAM_TIMEOUT_SECONDS,
             deepgram_api_key="configured" if settings.DEEPGRAM_API_KEY else "missing",
-            twilio_media_download_timeout_seconds=settings.TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS,
-            twilio_media_credentials=(
+            waha_media_download_timeout_seconds=settings.WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS,
+            waha_media_credentials=(
                 "configured"
-                if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN
+                if settings.WAHA_BASE_URL and settings.WAHA_API_KEY
                 else "missing"
             ),
             openrouter_model=settings.OPENROUTER_MODEL or "missing",

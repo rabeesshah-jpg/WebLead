@@ -69,7 +69,7 @@ When Django returns:
 n8n must **not**:
 
 - create or update leads
-- send another WhatsApp reply (Django already sent the Twilio Content picker)
+- send another WhatsApp reply (Django already sent the language buttons via WAHA)
 - call render-audio
 
 This status is returned for new customers and for mid-conversation language-change

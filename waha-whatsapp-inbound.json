@@ -1,0 +1,41 @@
+{
+  "name": "WAHA WhatsApp Inbound (stub)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-inbound",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "waha-inbound-webhook",
+      "name": "WhatsApp Inbound Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "waha-whatsapp-inbound"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Django already maps WAHA → extract JSON.\n// Expect body fields: whatsapp_number, message, message_sid, button_payload, input_channel, media_url…\nconst item = $input.first().json;\nconst body = item.body || item;\nreturn [{ json: {\n  whatsapp_number: body.whatsapp_number,\n  message: body.message,\n  message_sid: body.message_sid,\n  button_payload: body.button_payload || null,\n  button_text: body.button_text || null,\n  input_channel: body.input_channel || 'whatsapp_text',\n  media_url: body.media_url || null,\n  media_content_type: body.media_content_type || null,\n} }];"
+      },
+      "id": "normalize-waha-payload",
+      "name": "Normalize WAHA Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0]
+    }
+  ],
+  "connections": {
+    "WhatsApp Inbound Webhook": {
+      "main": [[{ "node": "Normalize WAHA Payload", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

@@ -30,20 +30,18 @@ MENU_LANGUAGE_DUPLICATE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ceb5"
 MENU_LANGUAGE_PAYLOAD_SID = "SM0cc5a1d9e22bf9850ca24261ee23ceb3"
 
 SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
+    
+    
     "TWILIO_WHATSAPP_MENU_CONTENT_SID": MENU_CONTENT_SID,
     "LEAD_QUALIFICATION_ENABLED": True,
-    "N8N_QUALIFICATION_API_SECRET": API_SECRET,
-}
+    "N8N_QUALIFICATION_API_SECRET": API_SECRET}
 
 IN_PROGRESS_FIELDS = {
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
     "referral_source": "Google",
     "whatsapp_confirmed": True,
-    "preferred_phone": VALID_WHATSAPP_NUMBER,
-}
+    "preferred_phone": VALID_WHATSAPP_NUMBER}
 
 
 def _post_extract(client: Client, payload: dict) -> object:
@@ -95,8 +93,7 @@ def test_language_command_and_menu_language_action_match(
             "input_channel": "whatsapp_text",
             "message_sid": LANGUAGE_MESSAGE_SID,
             "media_url": None,
-            "media_content_type": None,
-        },
+            "media_content_type": None},
     )
     slash_body = slash_response.json()
 
@@ -108,8 +105,7 @@ def test_language_command_and_menu_language_action_match(
             "input_channel": "whatsapp_text",
             "message_sid": MENU_LANGUAGE_BODY_SID,
             "media_url": None,
-            "media_content_type": None,
-        },
+            "media_content_type": None},
     )
     menu_body = menu_response.json()
 
@@ -123,8 +119,7 @@ def test_language_command_and_menu_language_action_match(
             "input_channel": "whatsapp_text",
             "message_sid": MENU_LANGUAGE_PAYLOAD_SID,
             "media_url": None,
-            "media_content_type": None,
-        },
+            "media_content_type": None},
     )
     payload_body = payload_response.json()
 
@@ -162,8 +157,7 @@ def test_body_only_language_token_triggers_language_flow(
             "input_channel": "whatsapp_text",
             "message_sid": "SM0menu000000000000000000000001",
             "media_url": None,
-            "media_content_type": None,
-        },
+            "media_content_type": None},
     )
 
     response = _post_extract(
@@ -174,8 +168,7 @@ def test_body_only_language_token_triggers_language_flow(
             "input_channel": "whatsapp_text",
             "message_sid": MENU_LANGUAGE_BODY_ONLY_SID,
             "media_url": None,
-            "media_content_type": None,
-        },
+            "media_content_type": None},
     )
     body = response.json()
 
@@ -203,8 +196,7 @@ def test_unrelated_body_does_not_trigger_language_flow(mock_send_picker: MagicMo
             "input_channel": "whatsapp_text",
             "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ceb6",
             "media_url": None,
-            "media_content_type": None,
-        },
+            "media_content_type": None},
     )
     body = response.json()
 
@@ -232,8 +224,7 @@ def test_duplicate_message_sid_for_menu_language_does_not_resend_picker(
         "input_channel": "whatsapp_text",
         "message_sid": MENU_LANGUAGE_DUPLICATE_SID,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
 
     first = _post_extract(client, payload)
     second = _post_extract(client, payload)

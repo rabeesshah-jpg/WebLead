@@ -28,5 +28,4 @@ def test_log_extract_step_failed_emits_safe_structured_payload(caplog):
         "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
         "error_type": "DeepgramTimeoutError",
         "duration_ms": 1200,
-        "details": "Deepgram request timed out",
-    }
+        "details": "Deepgram request timed out"}

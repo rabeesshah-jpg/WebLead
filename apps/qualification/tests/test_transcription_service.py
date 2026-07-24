@@ -30,7 +30,7 @@ from apps.qualification.twilio_media import (
 )
 from apps.qualification.voice_note_config import VoiceNoteConfigurationError
 
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 MESSAGE_SID = "MM0cc5a1d9e22bf9850ca24261ee23ce90"
 MEDIA_CONTENT_TYPE = "audio/ogg"
 TRANSCRIPT = "I need a website for my bakery"

@@ -57,8 +57,7 @@ def _voice_note_english_session():
         whatsapp_number=VOICE_WHATSAPP_NUMBER,
         defaults={
             "language": "en",
-            "language_selected_at": timezone.now(),
-        },
+            "language_selected_at": timezone.now()},
     )
     yield
     WhatsAppConversationSession.objects.filter(whatsapp_number=VOICE_WHATSAPP_NUMBER).delete()
@@ -92,8 +91,8 @@ def _post_voice(client: Client, payload: dict | None = None) -> object:
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="",
+    WAHA_API_KEY="",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 def test_missing_twilio_account_sid_returns_503_and_logs_event(client, caplog):
@@ -102,13 +101,13 @@ def test_missing_twilio_account_sid_returns_503_and_logs_event(client, caplog):
 
     assert response.status_code == 503
     assert response.json() == {"error": "Qualification service is unavailable."}
-    assert "qualification_voice_missing_twilio_credentials" in caplog.text
+    assert "qualification_voice_missing_waha_credentials" in caplog.text
 
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="",
 )
 def test_missing_deepgram_api_key_returns_503_and_logs_event(client, caplog):
@@ -121,8 +120,8 @@ def test_missing_deepgram_api_key_returns_503_and_logs_event(client, caplog):
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch("apps.qualification.core.legacy_compat.download_twilio_media")
@@ -143,15 +142,15 @@ def test_twilio_unauthorized_returns_503_and_logs_event(mock_download, client, c
         response = _post_voice(client)
 
     assert response.status_code == 502
-    assert response.json() == {"error": "Twilio media download failed."}
+    assert response.json() == {"error": "WhatsApp media download failed."}
     assert "twilio_media_download_failed" in caplog.text
     assert "qualification_voice_twilio_download_unauthorized" in caplog.text
 
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch(
@@ -163,15 +162,15 @@ def test_twilio_download_timeout_returns_503_and_logs_event(mock_download, clien
         response = _post_voice(client)
 
     assert response.status_code == 502
-    assert response.json() == {"error": "Twilio media download failed."}
+    assert response.json() == {"error": "WhatsApp media download failed."}
     assert "twilio_media_download_failed" in caplog.text
     assert "qualification_voice_twilio_download_timeout" in caplog.text
 
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch("apps.qualification.core.legacy_compat.transcribe_audio")
@@ -205,8 +204,8 @@ def test_deepgram_non_success_returns_503_and_logs_event(
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch(
@@ -231,8 +230,8 @@ def test_deepgram_timeout_returns_503_and_logs_event(
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 @patch("apps.qualification.core.legacy_compat.transcribe_audio", return_value=VOICE_TRANSCRIPT)
@@ -256,21 +255,21 @@ def test_valid_mocked_voice_pipeline_returns_200_with_voice_fields(
 
 
 @override_settings(
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
 )
 def test_check_voice_note_config_ready(capsys):
     call_command("check_voice_note_config")
     output = capsys.readouterr().out
-    assert "Twilio media download credentials: configured" in output
+    assert "WAHA media download credentials: configured" in output
     assert "Deepgram API key: configured" in output
     assert "Voice-note configuration: READY" in output
 
 
 @override_settings(
-    TWILIO_ACCOUNT_SID="",
-    TWILIO_AUTH_TOKEN="",
+    WAHA_BASE_URL="",
+    WAHA_API_KEY="",
     DEEPGRAM_API_KEY="",
 )
 def test_check_voice_note_config_not_ready(capsys):
@@ -278,7 +277,7 @@ def test_check_voice_note_config_not_ready(capsys):
         call_command("check_voice_note_config")
     assert exc_info.value.code == 1
     output = capsys.readouterr().out
-    assert "Twilio media download credentials: missing" in output
+    assert "WAHA media download credentials: missing" in output
     assert "Deepgram API key: missing" in output
     assert "Voice-note configuration: NOT READY" in output
 
@@ -297,12 +296,12 @@ def test_voice_note_config_report_never_exposes_secret_values():
 
 
 @override_settings(
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
-    TWILIO_MEDIA_MAX_BYTES=1024,
+    WAHA_MEDIA_MAX_BYTES=1024,
 )
-@patch("apps.qualification.twilio_media.urllib.request.urlopen")
+@patch("apps.whatsapp.waha_client.urllib.request.urlopen")
 def test_twilio_media_download_enforces_size_limit(mock_urlopen):
     from apps.qualification.twilio_media import download_twilio_media
 
@@ -320,7 +319,7 @@ def test_twilio_media_download_enforces_size_limit(mock_urlopen):
 
     mock_urlopen.return_value = FakeResponse()
     media_url = (
-        "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+        "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
     )
 
     with pytest.raises(TwilioMediaRequestError):
@@ -329,11 +328,15 @@ def test_twilio_media_download_enforces_size_limit(mock_urlopen):
 
 @override_settings(
     N8N_QUALIFICATION_API_SECRET="test-n8n-qualification-api-secret",
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     DEEPGRAM_API_KEY="test-deepgram-api-key",
     OPENROUTER_API_KEY="",
     OPENROUTER_MODEL="test/model",
+)
+@patch(
+    "apps.qualification.qualification_turn.try_handle_qualification_step_turn",
+    return_value=None,
 )
 @patch(
     "apps.qualification.qualification_turn.try_handle_rich_inbound_qualification_turn",
@@ -350,10 +353,11 @@ def test_openrouter_missing_after_successful_transcription_logs_failure_type(
     mock_transcribe,
     mock_extract,
     mock_rich,
+    mock_step,
     client,
     caplog,
 ):
-    """Force OpenRouter path after transcription (bypass rich inbound)."""
+    """Force OpenRouter path after transcription (bypass step/rich inbound)."""
     clear_message_sid_cache()
     with caplog.at_level(logging.ERROR, logger="apps.qualification"):
         response = _post_voice(
@@ -366,19 +370,20 @@ def test_openrouter_missing_after_successful_transcription_logs_failure_type(
     assert "QualificationServiceUnavailableError:OpenRouterConfigurationError" in caplog.text
     mock_extract.assert_called_once()
     mock_rich.assert_called_once()
+    mock_step.assert_called_once()
 
 
 @override_settings(
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
 )
-@patch("apps.qualification.twilio_media.urllib.request.urlopen")
+@patch("apps.whatsapp.waha_client.urllib.request.urlopen")
 def test_twilio_media_download_maps_socket_timeout(mock_urlopen):
     from apps.qualification.twilio_media import download_twilio_media
 
     mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("timed out"))
     media_url = (
-        "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+        "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
     )
 
     with pytest.raises(TwilioMediaTimeoutError):

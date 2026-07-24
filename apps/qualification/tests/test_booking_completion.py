@@ -88,8 +88,7 @@ def test_apply_outbound_channel_routing_voice_in_progress_is_audio_only():
             "conversation_language": "en",
             "reply_text": "May I know what type of website help you need?",
             "spoken_text": "May I know what type of website help you need?",
-            "qualification_status": "in_progress",
-        },
+            "qualification_status": "in_progress"},
         input_channel="whatsapp_voice_note",
     )
 
@@ -115,8 +114,7 @@ def test_apply_outbound_channel_routing_voice_first_booking_keeps_url_in_reply_t
             "whatsapp_text": text_with_link,
             "qualification_status": "completed",
             "send_booking_link": True,
-            "booking_link_sent": True,
-        },
+            "booking_link_sent": True},
         input_channel="whatsapp_voice_note",
     )
 
@@ -141,8 +139,7 @@ def test_finalize_turn_response_returns_single_reply_text_with_booking_link():
             "next_field": None,
             "reply_text": "legacy completion text",
             "qualification_status": "completed",
-            "preferred_phone": WHATSAPP_NUMBER,
-        },
+            "preferred_phone": WHATSAPP_NUMBER},
         input_channel="whatsapp_text",
         conversation_language="en",
         whatsapp_number=WHATSAPP_NUMBER,
@@ -173,8 +170,7 @@ def test_finalize_voice_completion_speaks_without_url_and_sets_whatsapp_text():
             "next_field": None,
             "reply_text": "legacy completion text",
             "qualification_status": "completed",
-            "preferred_phone": WHATSAPP_NUMBER,
-        },
+            "preferred_phone": WHATSAPP_NUMBER},
         input_channel="whatsapp_voice_note",
         conversation_language="en",
         whatsapp_number=WHATSAPP_NUMBER,
@@ -212,8 +208,7 @@ def test_completed_extract_returns_single_reply_text_containing_booking_link(
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
     response = client.post(
@@ -222,8 +217,7 @@ def test_completed_extract_returns_single_reply_text_containing_booking_link(
             "message": "Yes",
             "whatsapp_number": WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce93",
-        },
+            "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce93"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -253,8 +247,7 @@ def test_completed_extract_response_uses_fallback_when_booking_link_missing(mock
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
     response = client.post(
@@ -263,8 +256,7 @@ def test_completed_extract_response_uses_fallback_when_booking_link_missing(mock
             "message": "Yes",
             "whatsapp_number": WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce94",
-        },
+            "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce94"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -295,8 +287,7 @@ def test_first_booking_completion_voice_reply_text_includes_url_spoken_text_does
                 "next_field": None,
                 "reply_text": "legacy completion text",
                 "qualification_status": "completed",
-                "preferred_phone": number,
-            },
+                "preferred_phone": number},
             input_channel=input_channel,
             conversation_language="en",
             whatsapp_number=number,
@@ -332,8 +323,7 @@ def test_post_booking_completion_blocks_url_resend_for_text_and_voice():
                 "next_field": None,
                 "reply_text": "legacy completion text",
                 "qualification_status": "completed",
-                "preferred_phone": WHATSAPP_NUMBER,
-            },
+                "preferred_phone": WHATSAPP_NUMBER},
             input_channel=input_channel,
             conversation_language="en",
             whatsapp_number=WHATSAPP_NUMBER,

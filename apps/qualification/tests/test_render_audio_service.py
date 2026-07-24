@@ -25,8 +25,7 @@ VALIDATED_DATA = {
     "lang": "en",
     "request_id": "SM_TEST_001",
     "whatsapp_number": None,
-    "conversation_language": None,
-}
+    "conversation_language": None}
 
 
 @pytest.fixture(autouse=True)
@@ -118,8 +117,7 @@ def test_arabic_disabled_config_returns_text_fallback_without_renderer(mock_lang
     result = RenderAudioService(renderer=renderer).render(
         {
             **VALIDATED_DATA,
-            "whatsapp_number": "+923001234567",
-        },
+            "whatsapp_number": "+923001234567"},
     )
 
     renderer.assert_not_called()

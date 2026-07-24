@@ -44,8 +44,7 @@ def _post(client: Client, message: str) -> object:
         data={
             "message": message,
             "whatsapp_number": WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -73,8 +72,7 @@ def _seed_completed_qualification(mock_extract, client) -> None:
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
     mock_extract.reset_mock()
 
@@ -153,8 +151,7 @@ def test_referral_source_completes_and_returns_booking_link(mock_extract, client
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "I need a new website for my restaurant",
-        },
+            "requirements": "I need a new website for my restaurant"},
     )
 
     response = _post(client, "Facebook")

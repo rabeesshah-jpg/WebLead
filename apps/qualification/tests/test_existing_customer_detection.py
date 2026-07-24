@@ -114,8 +114,7 @@ def _post(
     data: dict = {
         "message": message,
         "whatsapp_number": number,
-        "input_channel": "whatsapp_text",
-    }
+        "input_channel": "whatsapp_text"}
     if message_sid is not None:
         data["message_sid"] = message_sid
     response = client.post(

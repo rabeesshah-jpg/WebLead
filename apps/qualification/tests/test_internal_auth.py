@@ -25,14 +25,12 @@ RENDER_ENDPOINT = "/api/internal/qualification/render-audio/"
 VALID_EXTRACT_PAYLOAD = {
     "message": "I need a new website for a restaurant",
     "whatsapp_number": "+923001234567",
-    "input_channel": "whatsapp_text",
-}
+    "input_channel": "whatsapp_text"}
 VALID_RENDER_PAYLOAD = {
     "text": "Thank you. How did you hear about us?",
     "voice": "F1",
     "lang": "en",
-    "request_id": "SM_TEST_001",
-}
+    "request_id": "SM_TEST_001"}
 
 
 @pytest.fixture

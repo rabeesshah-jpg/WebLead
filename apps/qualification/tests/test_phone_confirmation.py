@@ -27,8 +27,7 @@ def _extraction(
         "requirements": 0.92,
         "referral_source": 0.9,
         "whatsapp_confirmed": 0.96,
-        "preferred_phone": 0.94,
-    }
+        "preferred_phone": 0.94}
     if confidence_overrides:
         confidence.update(confidence_overrides)
 
@@ -63,8 +62,7 @@ def test_restaurant_facebook_regression_strips_unasked_phone_fields():
         rejected.field_name: rejected.reason for rejected in result.rejected_fields
     } == {
         "whatsapp_confirmed": "null value",
-        "preferred_phone": "null value",
-    }
+        "preferred_phone": "null value"}
 
 
 def test_known_whatsapp_number_alone_is_not_evidence_of_confirmation():

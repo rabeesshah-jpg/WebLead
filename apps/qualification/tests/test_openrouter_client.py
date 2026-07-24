@@ -33,8 +33,7 @@ OPENROUTER_SETTINGS = {
     "OPENROUTER_MODEL": TEST_MODEL,
     "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
     "OPENROUTER_TIMEOUT_SECONDS": 20,
-    "OPENROUTER_COMPLETION_MAX_TOKENS": 120,
-}
+    "OPENROUTER_COMPLETION_MAX_TOKENS": 120}
 
 
 def _valid_extraction_payload(
@@ -58,9 +57,7 @@ def _valid_extraction_payload(
             "requirements": 0.92,
             "referral_source": referral_source_confidence,
             "whatsapp_confirmed": whatsapp_confirmed_confidence,
-            "preferred_phone": preferred_phone_confidence,
-        },
-    }
+            "preferred_phone": preferred_phone_confidence}}
 
 
 def _openrouter_wrapper_payload(content: object) -> dict[str, object]:

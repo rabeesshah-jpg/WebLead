@@ -23,9 +23,7 @@ def _valid_payload(**overrides: object) -> dict[str, object]:
             "requirements": 0.92,
             "referral_source": 0.0,
             "whatsapp_confirmed": 0.0,
-            "preferred_phone": 0.0,
-        },
-    }
+            "preferred_phone": 0.0}}
     payload.update(overrides)
     return payload
 
@@ -155,8 +153,7 @@ def test_invalid_e164_phone_is_rejected():
             "requirements": 0.92,
             "referral_source": 0.0,
             "whatsapp_confirmed": 0.0,
-            "preferred_phone": 0.9,
-        },
+            "preferred_phone": 0.9},
     )
     with pytest.raises(ExtractionParseError, match="preferred_phone must be a valid E.164"):
         parse_extraction_payload(payload)
@@ -170,8 +167,7 @@ def test_valid_e164_phone_is_accepted():
             "requirements": 0.92,
             "referral_source": 0.0,
             "whatsapp_confirmed": 0.0,
-            "preferred_phone": 0.88,
-        },
+            "preferred_phone": 0.88},
     )
     result = parse_extraction_payload(payload)
     assert result.preferred_phone == "+447911123456"
@@ -186,8 +182,7 @@ def test_explicit_whatsapp_confirmed_false_is_accepted():
             "requirements": 0.92,
             "referral_source": 0.0,
             "whatsapp_confirmed": 0.95,
-            "preferred_phone": 0.92,
-        },
+            "preferred_phone": 0.92},
     )
     result = parse_extraction_json(json.dumps(payload))
     assert result.whatsapp_confirmed is False
@@ -201,8 +196,7 @@ def test_null_field_with_non_zero_confidence_is_rejected():
             "requirements": 0.92,
             "referral_source": 0.5,
             "whatsapp_confirmed": 0.0,
-            "preferred_phone": 0.0,
-        },
+            "preferred_phone": 0.0},
     )
     with pytest.raises(
         ExtractionParseError,

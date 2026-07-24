@@ -8,12 +8,12 @@ from apps.qualification.voice_note_config import get_voice_note_config_report
 
 
 class Command(BaseCommand):
-    help = "Check Twilio media download and Deepgram configuration for voice notes."
+    help = "Check WAHA media download and Deepgram configuration for voice notes."
 
     def handle(self, *args: object, **options: object) -> None:
         report = get_voice_note_config_report()
         self.stdout.write(
-            f"Twilio media download credentials: {report.twilio_media_credentials}"
+            f"WAHA media download credentials: {report.waha_media_credentials}"
         )
         self.stdout.write(f"Deepgram API key: {report.deepgram_api_key}")
         self.stdout.write(f"Deepgram model: {report.deepgram_model}")

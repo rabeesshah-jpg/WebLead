@@ -83,8 +83,7 @@ def test_partial_transcript_is_ignored(client: Client):
             "message": "I need a website",
             "call_sid": CALL_SID,
             "utterance_id": "utt-partial-1",
-            "is_final": False,
-        },
+            "is_final": False},
     )
     body = response.json()
     assert response.status_code == 200
@@ -115,8 +114,7 @@ def test_duplicate_final_transcript_enqueues_tts_only_once(client: Client):
             "reply_text": "What are you specifically looking for?",
             "qualification_status": "in_progress",
             "preferred_phone": None,
-            "conversation_language": "en",
-        }
+            "conversation_language": "en"}
 
     service = ExtractService(turn_handler=fake_turn)
     payload = {
@@ -125,8 +123,7 @@ def test_duplicate_final_transcript_enqueues_tts_only_once(client: Client):
         "message": "I need SEO help",
         "call_sid": CALL_SID,
         "utterance_id": "utt-final-1",
-        "is_final": True,
-    }
+        "is_final": True}
     first = service.run_turn(payload)
     second = service.run_turn(payload)
 
@@ -144,8 +141,7 @@ def test_debounce_ignores_same_transcript_without_utterance_id():
         "reply_text": "ok",
         "spoken_text": "ok",
         "tts_enqueued": True,
-        "duplicate_detected": False,
-    }
+        "duplicate_detected": False}
     cache_voice_utterance_response(
         call_sid=CALL_SID,
         utterance_id=None,
@@ -182,8 +178,7 @@ def test_voice_booking_complete_spoken_has_no_url(
         {
             "project_type": "new_website",
             "requirements": "restaurant website",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
     response = _post(
         client,
@@ -193,13 +188,12 @@ def test_voice_booking_complete_spoken_has_no_url(
             "message": "Yup",
             "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23cef1",
             "media_url": (
-                "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+                "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
             ),
             "media_content_type": "audio/ogg",
             "call_sid": CALL_SID,
             "utterance_id": "utt-yes-1",
-            "is_final": True,
-        },
+            "is_final": True},
     )
     body = response.json()
     assert body["qualification_status"] == "completed"
@@ -225,8 +219,7 @@ def test_irrelevant_message_redirects_politely(client: Client):
         {
             "whatsapp_number": WHATSAPP_NUMBER,
             "message": "maybe",
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
     body = response.json()
     assert "few basic project details" in body["reply_text"]
@@ -240,16 +233,14 @@ def test_unsupported_question_uses_meeting_fallback(client: Client):
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "website",
-        },
+            "requirements": "website"},
     )
     response = _post(
         client,
         {
             "whatsapp_number": WHATSAPP_NUMBER,
             "message": "Can you guarantee 1 million sales?",
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
     body = response.json()
     assert "website specialist" in body["reply_text"]
@@ -263,8 +254,7 @@ def test_multiple_services_are_merged(client: Client):
         {
             "whatsapp_number": WHATSAPP_NUMBER,
             "message": "I need website, SEO, and AI chatbot",
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
     body = response.json()
     assert body["accepted_fields"]["services_required"] == [
@@ -286,8 +276,7 @@ def test_fallback_and_normal_response_not_both_queued():
             "reply_text": "Are you looking for a new website or an upgrade to your existing website?",
             "qualification_status": "in_progress",
             "preferred_phone": None,
-            "conversation_language": "en",
-        }
+            "conversation_language": "en"}
     )
     payload = {
         "whatsapp_number": WHATSAPP_NUMBER,
@@ -295,8 +284,7 @@ def test_fallback_and_normal_response_not_both_queued():
         "message": "hello",
         "call_sid": CALL_SID,
         "utterance_id": "utt-lock-1",
-        "is_final": True,
-    }
+        "is_final": True}
     first = service.run_turn(payload)
     second = service.run_turn(payload)
     assert first["tts_enqueued"] is True

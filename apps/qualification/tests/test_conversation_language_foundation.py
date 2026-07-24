@@ -24,7 +24,6 @@ from apps.qualification.integrations.twilio_language_picker import (
     TwilioLanguagePickerConfigurationError,
     send_language_picker,
 )
-from apps.webhooks.twilio_inbound_payload import parse_twilio_inbound_payload
 
 pytestmark = pytest.mark.django_db
 
@@ -122,42 +121,29 @@ def test_supported_conversation_languages_include_only_english_and_arabic():
     assert SUPPORTED_CONVERSATION_LANGUAGES == frozenset({LANGUAGE_ENGLISH, LANGUAGE_ARABIC})
 
 
-@override_settings(TWILIO_LANGUAGE_PICKER_CONTENT_SID="")
-def test_app_works_when_language_picker_content_sid_empty():
+@override_settings(WAHA_BASE_URL="", WAHA_API_KEY="")
+def test_language_picker_requires_waha_configuration():
+    from apps.whatsapp.message_service import WhatsAppSendError
+
     assert send_language_picker.__name__ == "send_language_picker"
-    with pytest.raises(TwilioLanguagePickerConfigurationError, match="CONTENT_SID"):
-        send_language_picker(to_number="whatsapp:+15551234567")
+    with pytest.raises((TwilioLanguagePickerConfigurationError, WhatsAppSendError)):
+        send_language_picker(to_number="+15551234567")
 
 
 @override_settings(
-    TWILIO_LANGUAGE_PICKER_CONTENT_SID="HXtestcontentsidfortest0000000000",
-    TWILIO_ACCOUNT_SID="ACtest",
-    TWILIO_AUTH_TOKEN="token",
-    TWILIO_WHATSAPP_FROM_NUMBER="",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
 )
-def test_language_picker_helper_requires_whatsapp_from_number():
-    with pytest.raises(TwilioLanguagePickerConfigurationError, match="FROM_NUMBER"):
-        send_language_picker(to_number="whatsapp:+15551234567")
+def test_language_picker_send_uses_waha_when_configured(monkeypatch):
+    calls: list[dict] = []
 
+    def _fake_buttons(**kwargs):
+        calls.append(kwargs)
+        return "waha-lang-1"
 
-def test_parse_twilio_inbound_payload_without_button_fields():
-    params = {
-        "MessageSid": "SM1234567890abcdef1234567890abcd",
-        "Body": "Hello",
-    }
-    payload = parse_twilio_inbound_payload(params)
-    assert payload.button_payload is None
-    assert payload.button_text is None
-    assert payload.raw_params == params
-
-
-def test_parse_twilio_inbound_payload_with_optional_button_fields():
-    params = {
-        "MessageSid": "SM1234567890abcdef1234567890abcd",
-        "Body": "English",
-        "ButtonText": "English",
-        "ButtonPayload": "lang_en",
-    }
-    payload = parse_twilio_inbound_payload(params)
-    assert payload.button_text == "English"
-    assert payload.button_payload == "lang_en"
+    monkeypatch.setattr(
+        "apps.whatsapp.message_service.waha_client.send_buttons",
+        _fake_buttons,
+    )
+    assert send_language_picker(to_number="+15551234567") == "waha-lang-1"
+    assert calls and calls[0]["buttons"][0]["id"] == "lang_en"

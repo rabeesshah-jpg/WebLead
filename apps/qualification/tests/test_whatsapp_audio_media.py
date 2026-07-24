@@ -24,10 +24,10 @@ def test_media_endpoint_is_plain_django_function_view():
     assert not hasattr(whatsapp_voice_reply_media, "cls")
 
 
-def test_twilio_webhook_is_plain_django_function_view():
-    assert callable(webhook_views.twilio_whatsapp_inbound)
-    assert webhook_views.twilio_whatsapp_inbound.__name__ == "twilio_whatsapp_inbound"
-    assert not hasattr(webhook_views.twilio_whatsapp_inbound, "cls")
+def test_waha_webhook_is_plain_django_function_view():
+    assert callable(webhook_views.waha_whatsapp_inbound)
+    assert webhook_views.waha_whatsapp_inbound.__name__ == "waha_whatsapp_inbound"
+    assert not hasattr(webhook_views.waha_whatsapp_inbound, "cls")
 
 
 def test_invalid_audio_id_returns_not_found(client):

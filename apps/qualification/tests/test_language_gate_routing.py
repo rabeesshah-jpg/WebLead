@@ -25,7 +25,7 @@ ENDPOINT_PATH = "/api/internal/qualification/extract/"
 VALID_WHATSAPP_NUMBER = "+923001234567"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 VOICE_MESSAGE_SID = "MM0cc5a1d9e22bf9850ca24261ee23ce90"
-TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+WAHA_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 NEW_CUSTOMER_REFERRAL_EN = get_customer_message(
     language=LANGUAGE_ENGLISH, key="referral_source_new_customer_intro"
 )
@@ -35,8 +35,8 @@ NEW_CUSTOMER_REFERRAL_AR = get_customer_message(
 
 
 LANGUAGE_PICKER_SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
+    
+    
 }
 
 
@@ -80,8 +80,7 @@ def _text_payload(
         "input_channel": "whatsapp_text",
         "message_sid": message_sid,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     return payload
@@ -93,9 +92,8 @@ def _voice_payload() -> dict:
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
         "input_channel": "whatsapp_voice_note",
         "message_sid": VOICE_MESSAGE_SID,
-        "media_url": TWILIO_MEDIA_URL,
-        "media_content_type": "audio/ogg",
-    }
+        "media_url": WAHA_MEDIA_URL,
+        "media_content_type": "audio/ogg"}
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
@@ -107,8 +105,7 @@ def test_new_customer_text_sends_selector_without_openrouter(mock_extract, mock_
     assert response.status_code == 200
     assert response.json() == {
         "status": "awaiting_language_selection",
-        "message": "Language selector sent.",
-    }
+        "message": "Language selector sent."}
     mock_send_picker.assert_called_once_with(to_number=f"whatsapp:{VALID_WHATSAPP_NUMBER}")
     mock_extract.assert_not_called()
 
@@ -270,8 +267,7 @@ def test_existing_customer_text_requires_language_selection(mock_extract, mock_s
     assert response.status_code == 200
     assert response.json() == {
         "status": "awaiting_language_selection",
-        "message": "Language selector sent.",
-    }
+        "message": "Language selector sent."}
     session = WhatsAppConversationSession.objects.get(whatsapp_number=VALID_WHATSAPP_NUMBER)
     assert session.language is None
     assert session.qualified_at == now
@@ -373,7 +369,7 @@ def test_duplicate_message_sid_does_not_send_duplicate_selector(mock_send_picker
     assert get_cached_turn_response(MESSAGE_SID) is not None
 
 
-@override_settings(TWILIO_LANGUAGE_PICKER_CONTENT_SID="")
+@override_settings()
 @patch(
     "apps.qualification.services.language_gate_service.send_language_picker",
     side_effect=TwilioLanguagePickerConfigurationError(

@@ -54,8 +54,7 @@ def _referral_payload(referral_source: str) -> dict[str, object]:
             "requirements": 0.92,
             "referral_source": 0.9,
             "whatsapp_confirmed": 0.0,
-            "preferred_phone": 0.0,
-        },
+            "preferred_phone": 0.0},
     )
 
 
@@ -158,8 +157,7 @@ def test_invalid_llm_json_returns_http_200_not_502(client: Client):
                 {
                     "message": OPENROUTER_FALLBACK_MESSAGE,
                     "whatsapp_number": VALID_WHATSAPP_NUMBER,
-                    "input_channel": "whatsapp_text",
-                },
+                    "input_channel": "whatsapp_text"},
             ),
             content_type="application/json",
             **internal_api_auth_headers(),
@@ -184,8 +182,7 @@ def test_markdown_wrapped_llm_json_returns_http_200(client: Client):
                 {
                     "message": OPENROUTER_FALLBACK_MESSAGE,
                     "whatsapp_number": VALID_WHATSAPP_NUMBER,
-                    "input_channel": "whatsapp_text",
-                },
+                    "input_channel": "whatsapp_text"},
             ),
             content_type="application/json",
             **internal_api_auth_headers(),
@@ -211,8 +208,7 @@ def test_extra_text_around_llm_json_returns_http_200(client: Client):
                 {
                     "message": OPENROUTER_FALLBACK_MESSAGE,
                     "whatsapp_number": VALID_WHATSAPP_NUMBER,
-                    "input_channel": "whatsapp_text",
-                },
+                    "input_channel": "whatsapp_text"},
             ),
             content_type="application/json",
             **internal_api_auth_headers(),

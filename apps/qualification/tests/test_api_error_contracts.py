@@ -44,8 +44,7 @@ RENDER_PAYLOAD = {
     "text": "Thank you. How did you hear about us?",
     "voice": "F1",
     "lang": "en",
-    "request_id": "SM_TEST_001",
-}
+    "request_id": "SM_TEST_001"}
 
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={"project_type": "new_website", "requirements": "website for a restaurant"},

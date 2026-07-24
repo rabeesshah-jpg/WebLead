@@ -11,7 +11,8 @@ from rest_framework.views import exception_handler
 INVALID_REQUEST_ERROR = "Invalid request."
 FORBIDDEN_ERROR = "Forbidden."
 SERVICE_REQUEST_FAILED_ERROR = "Qualification service request failed."
-TWILIO_MEDIA_DOWNLOAD_FAILED_ERROR = "Twilio media download failed."
+TWILIO_MEDIA_DOWNLOAD_FAILED_ERROR = "WhatsApp media download failed."
+
 VOICE_TRANSCRIPTION_FAILED_ERROR = "Voice transcription failed."
 QUALIFICATION_LLM_REQUEST_FAILED_ERROR = "Qualification LLM request failed."
 SERVICE_UNAVAILABLE_ERROR = "Qualification service is unavailable."

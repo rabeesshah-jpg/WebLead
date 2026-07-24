@@ -33,8 +33,7 @@ OPENROUTER_SETTINGS = {
     "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
     "OPENROUTER_TIMEOUT_SECONDS": 20,
     "OPENROUTER_MAX_TOKENS": 768,
-    "OPENROUTER_COMPLETION_MAX_TOKENS": 120,
-}
+    "OPENROUTER_COMPLETION_MAX_TOKENS": 120}
 
 
 def _openrouter_wrapper_bytes(content: str) -> bytes:

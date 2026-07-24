@@ -100,8 +100,7 @@ def test_arabic_render_succeeds_when_enabled(mock_synthesize, mock_ffmpeg, clien
             "text": ARABIC_REPLY_TEXT,
             "request_id": "SM_ARABIC_001",
             "whatsapp_number": ARABIC_WHATSAPP_NUMBER,
-            "lang": "en",
-        },
+            "lang": "en"},
     )
 
     assert response.status_code == 200
@@ -134,8 +133,7 @@ def test_arabic_disabled_returns_text_fallback(mock_synthesize, client, media_ro
         {
             "text": ARABIC_REPLY_TEXT,
             "request_id": "SM_ARABIC_002",
-            "whatsapp_number": ARABIC_WHATSAPP_NUMBER,
-        },
+            "whatsapp_number": ARABIC_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 200
@@ -149,8 +147,7 @@ def test_arabic_disabled_returns_text_fallback(mock_synthesize, client, media_ro
         "content_type": None,
         "audio_url": None,
         "audio_content_type": None,
-        "request_id": "SM_ARABIC_002",
-    }
+        "request_id": "SM_ARABIC_002"}
     mock_synthesize.assert_not_called()
 
 
@@ -170,8 +167,7 @@ def test_missing_arabic_voice_returns_text_fallback(mock_synthesize, client, med
         {
             "text": ARABIC_REPLY_TEXT,
             "request_id": "SM_ARABIC_003",
-            "whatsapp_number": ARABIC_WHATSAPP_NUMBER,
-        },
+            "whatsapp_number": ARABIC_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 200
@@ -199,8 +195,7 @@ def test_arabic_upstream_failure_returns_text_fallback(mock_synthesize, client, 
         {
             "text": ARABIC_REPLY_TEXT,
             "request_id": "SM_ARABIC_004",
-            "whatsapp_number": ARABIC_WHATSAPP_NUMBER,
-        },
+            "whatsapp_number": ARABIC_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 200
@@ -235,8 +230,7 @@ def test_arabic_audio_validation_failure_returns_text_fallback(
         {
             "text": ARABIC_REPLY_TEXT,
             "request_id": "SM_ARABIC_005",
-            "whatsapp_number": ARABIC_WHATSAPP_NUMBER,
-        },
+            "whatsapp_number": ARABIC_WHATSAPP_NUMBER},
     )
 
     assert response.status_code == 200
@@ -260,8 +254,7 @@ def test_legacy_english_request_without_whatsapp_number_still_renders(mock_get_s
         "content_type": "audio/ogg",
         "audio_url": f"{PUBLIC_MEDIA_BASE_URL}/media/whatsapp_voice_replies/test/",
         "audio_content_type": "audio/ogg",
-        "request_id": "SM_TEST_001",
-    }
+        "request_id": "SM_TEST_001"}
     mock_get_service.return_value = service
 
     response = _post_render(
@@ -270,8 +263,7 @@ def test_legacy_english_request_without_whatsapp_number_still_renders(mock_get_s
             "text": "Thank you. How did you hear about us?",
             "voice": "F1",
             "lang": "en",
-            "request_id": "SM_TEST_001",
-        },
+            "request_id": "SM_TEST_001"},
     )
 
     assert response.status_code == 200
@@ -300,8 +292,7 @@ def test_duplicate_request_id_does_not_render_twice(mock_synthesize, mock_ffmpeg
     payload = {
         "text": ARABIC_REPLY_TEXT,
         "request_id": "SM_ARABIC_006",
-        "whatsapp_number": ARABIC_WHATSAPP_NUMBER,
-    }
+        "whatsapp_number": ARABIC_WHATSAPP_NUMBER}
 
     first = _post_render(client, payload)
     second = _post_render(client, payload)

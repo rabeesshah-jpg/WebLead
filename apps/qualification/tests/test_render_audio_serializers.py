@@ -17,8 +17,7 @@ VALID_PAYLOAD = {
     "text": VALID_TEXT,
     "voice": "F1",
     "lang": "en",
-    "request_id": "SM_TEST_001",
-}
+    "request_id": "SM_TEST_001"}
 
 SUCCESS_RESPONSE = {
     "status": "rendered",
@@ -28,8 +27,7 @@ SUCCESS_RESPONSE = {
     "content_type": "audio/ogg",
     "audio_url": "https://tunnel.example.com/media/whatsapp_voice_replies/00000000-0000-4000-8000-000000000001/",
     "audio_content_type": "audio/ogg",
-    "request_id": "SM_TEST_001",
-}
+    "request_id": "SM_TEST_001"}
 
 
 def _validated_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -135,8 +133,7 @@ def test_whatsapp_number_field_is_optional_and_validated():
         {
             "text": VALID_TEXT,
             "whatsapp_number": "+923001234567",
-            "conversation_language": "ar",
-        },
+            "conversation_language": "ar"},
     )
     assert validated["whatsapp_number"] == "+923001234567"
     assert validated["conversation_language"] == "ar"
@@ -159,8 +156,7 @@ def test_response_serializer_success_payload_key_set():
         "content_type",
         "audio_url",
         "audio_content_type",
-        "request_id",
-    }
+        "request_id"}
 
 
 def test_response_serializer_accepts_success_payload():

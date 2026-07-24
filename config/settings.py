@@ -74,6 +74,7 @@ if (
 
 INSTALLED_APPS = [
     "apps.webhooks.apps.WebhooksConfig",
+    "apps.whatsapp.apps.WhatsappConfig",
     "apps.qualification.apps.QualificationConfig",
 ]
 
@@ -123,68 +124,55 @@ USE_I18N = True
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Reverse-proxy HTTPS: Twilio signs the public URL Twilio requested.
+# Reverse-proxy HTTPS: public webhook URLs behind Cloudflare / tunnels.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
-TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
-TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
-# Twilio Content Template SID for the bilingual language Quick Reply (optional until configured).
-TWILIO_LANGUAGE_PICKER_CONTENT_SID = env("TWILIO_LANGUAGE_PICKER_CONTENT_SID", default="")
-# Twilio Content Template SID for the clickable WhatsApp menu (optional; plain-text fallback when unset).
-TWILIO_MENU_CONTENT_SID = env("TWILIO_MENU_CONTENT_SID", default="")
-# Twilio list-picker main menu Content Template SID (preferred name; falls back to TWILIO_MENU_CONTENT_SID).
-TWILIO_WHATSAPP_MENU_CONTENT_SID = (
-    env("TWILIO_WHATSAPP_MENU_CONTENT_SID", default="") or TWILIO_MENU_CONTENT_SID
-)
-# WhatsApp sender used when sending Content API messages (optional until outbound send is wired).
-TWILIO_WHATSAPP_FROM_NUMBER = env("TWILIO_WHATSAPP_FROM_NUMBER", default="")
-# Business Type list-picker Content SIDs (English / Arabic). Set via env in each deploy.
-TWILIO_BUSINESS_TYPE_CONTENT_SID_EN = env(
-    "TWILIO_BUSINESS_TYPE_CONTENT_SID_EN",
-    default="",
-)
-TWILIO_BUSINESS_TYPE_CONTENT_SID_AR = env(
-    "TWILIO_BUSINESS_TYPE_CONTENT_SID_AR",
-    default="",
-)
-# Master switch for WhatsApp lead qualification flows (menu, inactivity, extraction).
-LEAD_QUALIFICATION_ENABLED = env.bool("LEAD_QUALIFICATION_ENABLED", default=True)
+# WAHA (WhatsApp HTTP API) transport.
+WAHA_BASE_URL = env("WAHA_BASE_URL", default="").rstrip("/")
+WAHA_SESSION = env("WAHA_SESSION", default="default") or "default"
+WAHA_API_KEY = env("WAHA_API_KEY", default="")
+# Optional dedicated inbound webhook secret; falls back to WAHA_API_KEY when empty.
+WAHA_WEBHOOK_SECRET = env("WAHA_WEBHOOK_SECRET", default="")
 
-_TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
-    "TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
+_WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
+    "WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
 )
 
 
-def _load_twilio_media_download_timeout_seconds() -> int:
-    raw_value = env("TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS", default="20") or "20"
+def _load_waha_media_download_timeout_seconds() -> int:
+    raw_value = env("WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS", default="30") or "30"
     try:
         timeout_seconds = int(raw_value)
     except (TypeError, ValueError) as exc:
-        raise ImproperlyConfigured(_TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR) from exc
+        raise ImproperlyConfigured(_WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR) from exc
     if timeout_seconds <= 0:
-        raise ImproperlyConfigured(_TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR)
+        raise ImproperlyConfigured(_WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR)
     return timeout_seconds
 
 
-TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = _load_twilio_media_download_timeout_seconds()
+WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = _load_waha_media_download_timeout_seconds()
 
-_TWILIO_MEDIA_MAX_BYTES_ERROR = "TWILIO_MEDIA_MAX_BYTES must be a positive integer."
+_WAHA_MEDIA_MAX_BYTES_ERROR = "WAHA_MEDIA_MAX_BYTES must be a positive integer."
 
 
-def _load_twilio_media_max_bytes() -> int:
-    raw_value = env("TWILIO_MEDIA_MAX_BYTES", default="10485760") or "10485760"
+def _load_waha_media_max_bytes() -> int:
+    raw_value = env("WAHA_MEDIA_MAX_BYTES", default="10485760") or "10485760"
     try:
         max_bytes = int(raw_value)
     except (TypeError, ValueError) as exc:
-        raise ImproperlyConfigured(_TWILIO_MEDIA_MAX_BYTES_ERROR) from exc
+        raise ImproperlyConfigured(_WAHA_MEDIA_MAX_BYTES_ERROR) from exc
     if max_bytes <= 0:
-        raise ImproperlyConfigured(_TWILIO_MEDIA_MAX_BYTES_ERROR)
+        raise ImproperlyConfigured(_WAHA_MEDIA_MAX_BYTES_ERROR)
     return max_bytes
 
 
-TWILIO_MEDIA_MAX_BYTES = _load_twilio_media_max_bytes()
-# n8n production WhatsApp inbound webhook (Django forwards Twilio form POSTs here).
+WAHA_MEDIA_MAX_BYTES = _load_waha_media_max_bytes()
+
+# Master switch for WhatsApp lead qualification flows (menu, inactivity, extraction).
+LEAD_QUALIFICATION_ENABLED = env.bool("LEAD_QUALIFICATION_ENABLED", default=True)
+
+# n8n production WhatsApp inbound webhook (Django forwards normalized JSON here).
 # Prefer N8N_WEBHOOK_URL; N8N_WHATSAPP_WEBHOOK_URL is accepted as a legacy alias only.
 N8N_WEBHOOK_URL = (
     env("N8N_WEBHOOK_URL", default="") or env("N8N_WHATSAPP_WEBHOOK_URL", default="")
@@ -193,7 +181,7 @@ N8N_WEBHOOK_SECRET = env("N8N_WEBHOOK_SECRET", default="")
 N8N_FORWARD_TIMEOUT_SECONDS = env.int("N8N_FORWARD_TIMEOUT_SECONDS", default=5)
 N8N_QUALIFICATION_API_SECRET = env("N8N_QUALIFICATION_API_SECRET", default="")
 # Optional dedicated webhook for delayed option_template delivery (JSON). Falls back
-# to N8N_WEBHOOK_URL; n8n must Switch on option_template=project_type.
+# to N8N_WEBHOOK_URL; n8n must Switch on option_template (Django now sends via WAHA).
 N8N_OPTION_TEMPLATE_WEBHOOK_URL = env("N8N_OPTION_TEMPLATE_WEBHOOK_URL", default="")
 WEBLEAD_VOICE_EVENT_SECRET = env("WEBLEAD_VOICE_EVENT_SECRET", default="")
 
@@ -595,6 +583,11 @@ LOGGING = {
     },
     "loggers": {
         "apps.webhooks": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.whatsapp": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

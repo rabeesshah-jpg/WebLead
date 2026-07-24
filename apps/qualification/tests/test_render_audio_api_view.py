@@ -26,8 +26,7 @@ VALID_PAYLOAD = {
     "text": "Thank you. How did you hear about us?",
     "voice": "F1",
     "lang": "en",
-    "request_id": "SM_TEST_001",
-}
+    "request_id": "SM_TEST_001"}
 EXPECTED_RESPONSE = {
     "status": "rendered",
     "fallback_to_text": False,
@@ -36,8 +35,7 @@ EXPECTED_RESPONSE = {
     "content_type": "audio/ogg",
     "audio_url": f"{PUBLIC_MEDIA_BASE_URL}/media/whatsapp_voice_replies/test-audio-id/",
     "audio_content_type": "audio/ogg",
-    "request_id": "SM_TEST_001",
-}
+    "request_id": "SM_TEST_001"}
 
 
 @pytest.fixture
@@ -147,8 +145,7 @@ def test_provider_unavailable_returns_text_fallback(mock_get_service, client):
         "content_type": None,
         "audio_url": None,
         "audio_content_type": None,
-        "request_id": "SM_TEST_001",
-    }
+        "request_id": "SM_TEST_001"}
     mock_get_service.return_value = service
 
     response = _post_render(client, VALID_PAYLOAD)
@@ -172,8 +169,7 @@ def test_processing_failure_returns_text_fallback(mock_get_service, client):
         "content_type": None,
         "audio_url": None,
         "audio_content_type": None,
-        "request_id": "SM_TEST_001",
-    }
+        "request_id": "SM_TEST_001"}
     mock_get_service.return_value = service
 
     response = _post_render(client, VALID_PAYLOAD)

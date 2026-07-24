@@ -53,8 +53,7 @@ def test_voice_turn_latency_summary_merges_extract_and_render_timings(mock_logge
         step_durations={
             "twilio_media_download": 120,
             "deepgram_transcription": 450,
-            "openrouter_call": 1800,
-        },
+            "openrouter_call": 1800},
         extract_api_total_ms=2500,
     )
 
@@ -72,8 +71,7 @@ def test_voice_turn_latency_summary_merges_extract_and_render_timings(mock_logge
         "deepgram_transcription_ms": 450,
         "openrouter_call_ms": 1800,
         "tts_generation_ms": 900,
-        "api_total_ms": 3600,
-    }
+        "api_total_ms": 3600}
 
 
 def test_step_duration_tracker_records_summary_steps_only():
@@ -84,5 +82,4 @@ def test_step_duration_tracker_records_summary_steps_only():
     durations = get_tracked_step_durations()
     assert durations == {
         "twilio_media_download": 10,
-        "deepgram_transcription": 20,
-    }
+        "deepgram_transcription": 20}

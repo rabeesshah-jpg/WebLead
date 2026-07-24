@@ -95,8 +95,7 @@ def test_valid_request_produces_media_url_with_audio_ogg(
             "text": "Thank you. How did you hear about us?",
             "voice": "F1",
             "lang": "en",
-            "request_id": "SM_TEST_001",
-        },
+            "request_id": "SM_TEST_001"},
     )
 
     assert response.status_code == 200
@@ -298,8 +297,7 @@ def test_generated_filenames_are_uuid_based_not_request_id(
         client,
         {
             "text": "Hello",
-            "request_id": "SM_TEST_011",
-        },
+            "request_id": "SM_TEST_011"},
     )
 
     audio_id = response.json()["media_url"].rstrip("/").split("/")[-1]

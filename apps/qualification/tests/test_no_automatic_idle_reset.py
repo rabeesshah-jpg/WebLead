@@ -25,12 +25,11 @@ ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
 MENU_SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
-    "TWILIO_WHATSAPP_MENU_CONTENT_SID": "HXtestmainmenucontentsid00000000",
+    
+    
+    
     "LEAD_QUALIFICATION_ENABLED": True,
-    "SESSION_IDLE_RESET_SECONDS": 7200,
-}
+    "SESSION_IDLE_RESET_SECONDS": 7200}
 
 
 def _post_text(client: Client, message: str, *, message_sid: str) -> object:
@@ -41,8 +40,7 @@ def _post_text(client: Client, message: str, *, message_sid: str) -> object:
                 "whatsapp_number": WHATSAPP_NUMBER,
                 "input_channel": "whatsapp_text",
                 "message": message,
-                "message_sid": message_sid,
-            }
+                "message_sid": message_sid}
         ),
         content_type="application/json",
         **internal_api_auth_headers(),

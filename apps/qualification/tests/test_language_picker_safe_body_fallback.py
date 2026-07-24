@@ -30,15 +30,13 @@ CHANGE_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
 SELECT_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce92"
 
 LANGUAGE_PICKER_SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
-    "N8N_QUALIFICATION_API_SECRET": API_SECRET,
-}
+    "WAHA_BASE_URL": "https://waha.example.com",
+    "WAHA_API_KEY": "test-waha-api-key",
+    "N8N_QUALIFICATION_API_SECRET": API_SECRET}
 
 IN_PROGRESS_FIELDS = {
     "project_type": "new_website",
-    "requirements": "A restaurant website with online ordering",
-}
+    "requirements": "A restaurant website with online ordering"}
 
 
 @pytest.fixture
@@ -81,8 +79,7 @@ def _text_payload(
         "input_channel": "whatsapp_text",
         "message_sid": message_sid,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     return payload
@@ -90,20 +87,26 @@ def _text_payload(
 
 def _english_session_with_progress() -> WhatsAppConversationSession:
     save_accepted_fields(VALID_WHATSAPP_NUMBER, dict(IN_PROGRESS_FIELDS))
-    return WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=VALID_WHATSAPP_NUMBER,
-        language=LANGUAGE_ENGLISH,
-        language_selected_at=timezone.now(),
+        defaults={
+            "language": LANGUAGE_ENGLISH,
+            "language_selected_at": timezone.now(),
+        },
     )
+    return session
 
 
 def _arabic_session_with_progress() -> WhatsAppConversationSession:
     save_accepted_fields(VALID_WHATSAPP_NUMBER, dict(IN_PROGRESS_FIELDS))
-    return WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=VALID_WHATSAPP_NUMBER,
-        language=LANGUAGE_ARABIC,
-        language_selected_at=timezone.now(),
+        defaults={
+            "language": LANGUAGE_ARABIC,
+            "language_selected_at": timezone.now(),
+        },
     )
+    return session
 
 
 # --- Pending picker state ---

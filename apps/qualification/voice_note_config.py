@@ -20,15 +20,23 @@ class VoiceNoteConfigurationError(Exception):
 
 @dataclass(frozen=True)
 class VoiceNoteConfigReport:
-    twilio_media_credentials: str
+    waha_media_credentials: str
     deepgram_api_key: str
     deepgram_model: str
     deepgram_base_url: str
     ready: bool
 
+    @property
+    def twilio_media_credentials(self) -> str:
+        """Backward-compatible alias used by older logs/tests."""
+        return self.waha_media_credentials
 
-def _twilio_media_credentials_configured() -> bool:
-    return bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN)
+
+def _waha_media_credentials_configured() -> bool:
+    return bool(
+        getattr(settings, "WAHA_BASE_URL", "")
+        and getattr(settings, "WAHA_API_KEY", ""),
+    )
 
 
 def _deepgram_api_key_configured() -> bool:
@@ -39,11 +47,11 @@ def get_voice_note_config_report() -> VoiceNoteConfigReport:
     """Return a safe configuration summary for voice-note processing."""
     deepgram_model = settings.DEEPGRAM_MODEL or DEFAULT_DEEPGRAM_MODEL
     deepgram_base_url = settings.DEEPGRAM_BASE_URL or DEFAULT_DEEPGRAM_BASE_URL
-    twilio_configured = _twilio_media_credentials_configured()
+    waha_configured = _waha_media_credentials_configured()
     deepgram_configured = _deepgram_api_key_configured()
 
     return VoiceNoteConfigReport(
-        twilio_media_credentials="configured" if twilio_configured else "missing",
+        waha_media_credentials="configured" if waha_configured else "missing",
         deepgram_api_key="configured" if deepgram_configured else "missing",
         deepgram_model=(
             f"configured ({deepgram_model})"
@@ -55,7 +63,7 @@ def get_voice_note_config_report() -> VoiceNoteConfigReport:
             if settings.DEEPGRAM_BASE_URL
             else f"default used ({DEFAULT_DEEPGRAM_BASE_URL})"
         ),
-        ready=twilio_configured and deepgram_configured,
+        ready=waha_configured and deepgram_configured,
     )
 
 
@@ -64,11 +72,11 @@ def is_voice_note_ready() -> bool:
 
 
 def validate_voice_note_dependencies() -> None:
-    """Raise when Twilio media download or Deepgram credentials are missing."""
-    if not _twilio_media_credentials_configured():
+    """Raise when WAHA media download or Deepgram credentials are missing."""
+    if not _waha_media_credentials_configured():
         raise VoiceNoteConfigurationError(
-            log_event="qualification_voice_missing_twilio_credentials",
-            message="Twilio media download credentials are not configured",
+            log_event="qualification_voice_missing_waha_credentials",
+            message="WAHA media download credentials are not configured",
         )
     if not _deepgram_api_key_configured():
         raise VoiceNoteConfigurationError(

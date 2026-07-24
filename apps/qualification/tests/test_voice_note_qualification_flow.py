@@ -35,7 +35,7 @@ pytestmark = pytest.mark.django_db
 
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 
 def _post_voice(
@@ -57,8 +57,7 @@ def _post_voice(
                 "message_sid": message_sid,
                 "media_url": MEDIA_URL,
                 "media_content_type": "audio/ogg",
-                **({"message": message} if message is not None else {}),
-            }
+                **({"message": message} if message is not None else {})}
         ),
         content_type="application/json",
         **internal_api_auth_headers(),
@@ -162,8 +161,7 @@ def test_voice_referral_captures_source_and_completes_without_confirmation(
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "ecommerce website",
-        },
+            "requirements": "ecommerce website"},
     )
     mock_extract.return_value = QualificationFieldFilterResult(
         accepted_fields={"referral_source": "My friend told me"},
@@ -303,8 +301,7 @@ def test_text_and_voice_share_same_session_state(
                 "message": "Both",
                 "whatsapp_number": WHATSAPP_NUMBER,
                 "input_channel": "whatsapp_text",
-                "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce96",
-            }
+                "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce96"}
         ),
         content_type="application/json",
         **internal_api_auth_headers(),
@@ -342,8 +339,7 @@ def test_voice_after_booking_link_does_not_resend_url(
             "requirements": "ecommerce",
             "referral_source": "friend",
             "whatsapp_confirmed": True,
-            "preferred_phone": WHATSAPP_NUMBER,
-        },
+            "preferred_phone": WHATSAPP_NUMBER},
     )
     session = WhatsAppConversationSession.objects.get(whatsapp_number=WHATSAPP_NUMBER)
     mark_booking_link_sent(session)
@@ -379,8 +375,7 @@ def _reach_whatsapp_confirmation_prompt() -> None:
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
 

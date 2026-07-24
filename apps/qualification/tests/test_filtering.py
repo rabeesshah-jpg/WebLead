@@ -23,8 +23,7 @@ def _extraction(
         "requirements": 0.92,
         "referral_source": 0.9,
         "whatsapp_confirmed": 0.96,
-        "preferred_phone": 0.94,
-    }
+        "preferred_phone": 0.94}
     if confidence_overrides:
         confidence.update(confidence_overrides)
 
@@ -83,8 +82,7 @@ def test_multiple_fields_are_processed_independently():
         confidence_overrides={
             "requirements": 0.95,
             "referral_source": 0.74,
-            "preferred_phone": 0.8,
-        },
+            "preferred_phone": 0.8},
     )
     result = filter_qualification_fields(extraction)
     assert result.accepted_fields["requirements"] == "Need ecommerce"
@@ -122,8 +120,7 @@ def test_filtered_output_contains_only_accepted_updates():
         "project_type",
         "requirements",
         "whatsapp_confirmed",
-        "preferred_phone",
-    }
+        "preferred_phone"}
     assert "referral_source" not in result.accepted_fields
 
 

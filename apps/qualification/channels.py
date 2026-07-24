@@ -184,13 +184,14 @@ def _attach_option_template(
     finalized: dict[str, Any],
     *,
     input_channel: InputChannel,
+    whatsapp_number: str | None = None,
 ) -> dict[str, Any]:
     """
-    Tell n8n which Twilio clickable template to send for the current question.
+    Attach ``option_template`` and send the interactive WAHA message from Django.
 
     Text inbound sets ``option_template`` for referral_source (all customers) and
-    business_type (existing customers only). New-customer numbered questions and
-    voice notes must not trigger clickable templates.
+    business_type (existing customers only). Django sends the list/buttons via
+    WAHA so n8n must not also send a Content template when this key is present.
     """
     next_field = finalized.get("next_field")
     accepted_fields = finalized.get("accepted_fields")
@@ -204,6 +205,25 @@ def _attach_option_template(
     )
     if option_template is not None:
         finalized["option_template"] = option_template
+        session_number = _resolve_session_whatsapp_number(whatsapp_number, finalized)
+        if session_number and input_channel == "whatsapp_text":
+            language = normalize_conversation_language(
+                str(finalized.get("conversation_language") or LANGUAGE_ENGLISH),
+            )
+            try:
+                from apps.whatsapp.message_service import deliver_option_template
+
+                deliver_option_template(
+                    option_template=option_template,
+                    phone_number=session_number,
+                    language=language,
+                )
+            except Exception:  # noqa: BLE001
+                log_qualification_event(
+                    "option_template_waha_send_failed",
+                    option_template=option_template,
+                    whatsapp_number_prefix=session_number[:6],
+                )
     else:
         finalized.pop("option_template", None)
     return finalized
@@ -318,7 +338,11 @@ def finalize_turn_response(
         finalized,
         input_channel=input_channel,
     )
-    routed = _attach_option_template(routed, input_channel=input_channel)
+    routed = _attach_option_template(
+        routed,
+        input_channel=input_channel,
+        whatsapp_number=whatsapp_number,
+    )
     routed.pop("option_spoken_message_key", None)
     should_send_qualification_override = (
         bool(routed.get("should_send_qualification_question"))

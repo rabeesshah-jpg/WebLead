@@ -15,8 +15,7 @@ OPENROUTER_SETTINGS = {
     "OPENROUTER_MODEL": "test/openrouter-model",
     "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
     "OPENROUTER_TIMEOUT_SECONDS": 20,
-    "OPENROUTER_COMPLETION_MAX_TOKENS": 120,
-}
+    "OPENROUTER_COMPLETION_MAX_TOKENS": 120}
 
 CUSTOMER_MESSAGE = "I need a website for my bakery"
 KNOWN_WHATSAPP_NUMBER = "+15551234567"
@@ -78,8 +77,7 @@ def test_openrouter_prompt_optimized_log_emitted_with_compact_payload(mock_log_s
     assert user_payload["current_message"] == CUSTOMER_MESSAGE
     assert user_payload["collected_fields"] == {
         "project_type": "new_website",
-        "requirements": "bakery site",
-    }
+        "requirements": "bakery site"}
     assert len(user_payload["recent_history"]) == 6
     assert user_payload["recent_history"] == history[-6:]
     assert body["max_tokens"] == 120

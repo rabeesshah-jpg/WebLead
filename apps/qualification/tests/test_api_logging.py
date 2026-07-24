@@ -61,8 +61,7 @@ def test_log_upstream_timeout_includes_safe_turn_metadata(mock_logger):
         "elapsed_ms": 1234,
         "input_channel": "whatsapp_text",
         "message_sid_prefix": "SM0cc5a1",
-        "timestamp": payload["timestamp"],
-    }
+        "timestamp": payload["timestamp"]}
     assert "SM0cc5a1d9e22bf9850ca24261ee23ce90" not in mock_logger.log.call_args.args[1]
 
 

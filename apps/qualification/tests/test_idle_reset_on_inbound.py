@@ -30,7 +30,7 @@ pytestmark = pytest.mark.django_db
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 ONBOARDING_INTRO = get_customer_message(language="en", key="onboarding_intro")
 
 
@@ -42,8 +42,7 @@ def _post_text(client: Client, message: str, *, message_sid: str) -> object:
                 "whatsapp_number": WHATSAPP_NUMBER,
                 "input_channel": "whatsapp_text",
                 "message": message,
-                "message_sid": message_sid,
-            }
+                "message_sid": message_sid}
         ),
         content_type="application/json",
         **internal_api_auth_headers(),
@@ -66,8 +65,7 @@ def _post_voice(
                 "input_channel": "whatsapp_voice_note",
                 "message_sid": message_sid,
                 "media_url": MEDIA_URL,
-                "media_content_type": "audio/ogg",
-            }
+                "media_content_type": "audio/ogg"}
         ),
         content_type="application/json",
         **internal_api_auth_headers(),
@@ -146,8 +144,7 @@ def test_idle_reset_triggers_at_or_above_threshold(
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "restaurant website",
-        },
+            "requirements": "restaurant website"},
     )
     _set_last_activity(seconds_ago=gap_seconds)
 
@@ -165,8 +162,7 @@ def test_idle_reset_triggers_at_or_above_threshold(
     assert body.get("conversation_state") in {
         "WAITING_FOR_BUSINESS_TYPE",
         "WAITING_FOR_REFERRAL_SOURCE",
-        "WAITING_FOR_CUSTOMER_TYPE",
-    }
+        "WAITING_FOR_CUSTOMER_TYPE"}
     mock_extract.assert_not_called()
 
 
@@ -200,8 +196,7 @@ def test_idle_reset_after_booking_link_clears_booking_state(mock_extract, client
             "requirements": "restaurant",
             "referral_source": "Facebook",
             "whatsapp_confirmed": True,
-            "preferred_phone": WHATSAPP_NUMBER,
-        },
+            "preferred_phone": WHATSAPP_NUMBER},
     )
     session = _set_last_activity(seconds_ago=360)
     mark_booking_link_sent(session)
@@ -227,8 +222,7 @@ def test_booking_link_follow_up_within_threshold_is_preserved(mock_extract, clie
             "requirements": "restaurant",
             "referral_source": "Facebook",
             "whatsapp_confirmed": True,
-            "preferred_phone": WHATSAPP_NUMBER,
-        },
+            "preferred_phone": WHATSAPP_NUMBER},
     )
     session = _set_last_activity(seconds_ago=120)
     mark_booking_link_sent(session)

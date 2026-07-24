@@ -4,8 +4,8 @@ from apps.webhooks import views
 
 urlpatterns = [
     path(
-        "twilio/whatsapp-inbound/",
-        views.twilio_whatsapp_inbound,
-        name="twilio-whatsapp-inbound",
+        "waha/whatsapp-inbound/",
+        views.waha_whatsapp_inbound,
+        name="waha-whatsapp-inbound",
     ),
 ]

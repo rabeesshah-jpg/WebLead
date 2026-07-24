@@ -45,18 +45,18 @@ PROVIDER_ERROR_DETAIL = "provider secret failure details"
 TEST_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 
 OPENROUTER_ENDPOINT_SETTINGS = {
+    "WAHA_BASE_URL": "https://waha.example.com",
+    "WAHA_API_KEY": "test-waha-api-key",
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
     "OPENROUTER_API_KEY": "test-openrouter-api-key",
     "OPENROUTER_MODEL": "test/openrouter-model",
     "OPENROUTER_BASE_URL": "https://openrouter.example/api/v1",
-    "OPENROUTER_TIMEOUT_SECONDS": 20,
-}
+    "OPENROUTER_TIMEOUT_SECONDS": 20}
 
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={
         "project_type": "new_website",
-        "requirements": "website for a restaurant",
-    },
+        "requirements": "website for a restaurant"},
     rejected_fields=(
         RejectedQualificationField(field_name="referral_source", reason="null value"),
     ),
@@ -119,16 +119,14 @@ def test_valid_request_returns_filtered_result_and_calls_client(mock_extract, cl
         {
             "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["accepted_fields"] == {
         "project_type": "new_website",
-        "requirements": "website for a restaurant",
-    }
+        "requirements": "website for a restaurant"}
     assert body["rejected_fields"] == {"referral_source": "value_missing"}
     assert body["human_handoff_requested"] is False
     assert body["next_field"] == "referral_source"
@@ -275,8 +273,7 @@ def test_extra_request_field_returns_400(mock_extract, client):
         {
             "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "extra": "field",
-        },
+            "extra": "field"},
     )
 
     assert response.status_code == 400
@@ -372,8 +369,7 @@ def test_openrouter_timeout_logs_safe_structured_event(mock_urlopen, client, cap
             "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "message_sid": TEST_MESSAGE_SID,
-        },
+            "message_sid": TEST_MESSAGE_SID},
     )
 
     assert response.status_code == 502
@@ -409,8 +405,7 @@ def test_openrouter_non_timeout_failure_logs_generic_upstream_event(mock_urlopen
             "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "message_sid": TEST_MESSAGE_SID,
-        },
+            "message_sid": TEST_MESSAGE_SID},
     )
 
     assert response.status_code == 502
@@ -503,8 +498,7 @@ def test_endpoint_default_strips_unasked_phone_fields_for_restaurant_regression(
                     "choices": [
                         {
                             "message": {
-                                "content": json.dumps(unsafe_payload),
-                            }
+                                "content": json.dumps(unsafe_payload)}
                         }
                     ]
                 }
@@ -522,9 +516,7 @@ def test_endpoint_default_strips_unasked_phone_fields_for_restaurant_regression(
             "requirements": 0.92,
             "referral_source": 0.9,
             "whatsapp_confirmed": 0.96,
-            "preferred_phone": 0.94,
-        },
-    }
+            "preferred_phone": 0.94}}
     mock_urlopen.return_value = FakeResponse()
     WhatsAppConversationSession.objects.create(
         whatsapp_number=VALID_WHATSAPP_NUMBER,
@@ -560,9 +552,8 @@ N8N_TEXT_PAYLOAD = {
     "input_channel": "whatsapp_text",
     "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce90",
     "media_url": None,
-    "media_content_type": None,
-}
-TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+    "media_content_type": None}
+WAHA_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
@@ -574,8 +565,7 @@ def test_text_request_with_media_fields_omitted_returns_200(mock_extract, client
         {
             "message": OPENROUTER_FALLBACK_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
 
     assert response.status_code == 200
@@ -611,9 +601,8 @@ def test_text_request_with_non_empty_media_url_ignores_media_and_returns_200(moc
             "message": VALID_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     )
 
     assert response.status_code == 200
@@ -637,14 +626,13 @@ def test_voice_note_request_with_valid_audio_fields_is_accepted(
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     )
 
     assert response.status_code == 200
     assert response.json()["reply_mode"] == "voice"
-    mock_download.assert_called_once_with(TWILIO_MEDIA_URL)
+    mock_download.assert_called_once_with(WAHA_MEDIA_URL)
 
 
 @pytest.mark.parametrize(
@@ -654,21 +642,18 @@ def test_voice_note_request_with_valid_audio_fields_is_accepted(
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "media_url": None,
-            "media_content_type": "audio/ogg",
-        },
+            "media_content_type": "audio/ogg"},
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "video/mp4",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "video/mp4"},
     ],
 )
 @patch("apps.qualification.qualification_turn.extract_qualification_from_openrouter")
@@ -689,8 +674,7 @@ N8N_VOICE_PAYLOAD = {
         "https://api.twilio.com/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/"
         "Messages/MM0cc5a1d9e22bf9850ca24261ee23ce90/Media/MEyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
     ),
-    "media_content_type": "audio/ogg",
-}
+    "media_content_type": "audio/ogg"}
 VOICE_TRANSCRIPT = "I need a website for my bakery"
 
 
@@ -769,8 +753,7 @@ def test_text_payload_with_blank_message_returns_400(mock_extract, client):
         {
             "message": "",
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
 
     assert response.status_code == 400

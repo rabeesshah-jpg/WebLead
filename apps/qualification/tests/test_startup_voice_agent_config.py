@@ -15,9 +15,9 @@ from apps.qualification.startup_validation import log_voice_agent_config
     DEEPGRAM_MODEL="nova-2",
     DEEPGRAM_TIMEOUT_SECONDS=8,
     DEEPGRAM_API_KEY="configured-key",
-    TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS=5,
-    TWILIO_ACCOUNT_SID="ACtest",
-    TWILIO_AUTH_TOKEN="token",
+    WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS=30,
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
     OPENROUTER_MODEL="openai/gpt-4o-mini",
     OPENROUTER_TIMEOUT_SECONDS=20,
     OPENROUTER_API_KEY="configured-key",
@@ -31,7 +31,8 @@ def test_log_voice_agent_config_emits_safe_values_only(caplog):
     assert payload["deepgram_model"] == "nova-2"
     assert payload["deepgram_timeout_seconds"] == 8
     assert payload["deepgram_api_key"] == "configured"
-    assert payload["twilio_media_download_timeout_seconds"] == 5
+    assert payload["waha_media_download_timeout_seconds"] == 30
+    assert payload["waha_media_credentials"] == "configured"
     assert payload["openrouter_model"] == "openai/gpt-4o-mini"
     assert payload["openrouter_timeout_seconds"] == 20
     assert "sk-" not in caplog.text

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from rest_framework import serializers
 
 from apps.qualification.channels import VALID_INPUT_CHANNELS, InputChannel
-from apps.qualification.domain.constants import TWILIO_INBOUND_MESSAGE_SID_PATTERN
+from apps.qualification.domain.constants import INBOUND_MESSAGE_SID_PATTERN
 from apps.qualification.domain.validators import is_valid_e164_phone_number
 from apps.qualification.whatsapp_audio import (
     DEFAULT_LANG,
@@ -165,7 +165,7 @@ class ExtractRequestSerializer(serializers.Serializer):
         message_sid = payload["message_sid"]
         if message_sid is None:
             return None
-        if not isinstance(message_sid, str) or not TWILIO_INBOUND_MESSAGE_SID_PATTERN.fullmatch(
+        if not isinstance(message_sid, str) or not INBOUND_MESSAGE_SID_PATTERN.fullmatch(
             message_sid,
         ):
             raise serializers.ValidationError("Invalid message_sid.")

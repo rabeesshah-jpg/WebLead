@@ -35,11 +35,10 @@ NEW_CUSTOMER_REFERRAL_AR = get_customer_message(
 )
 
 LANGUAGE_PICKER_SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
+    "WAHA_BASE_URL": "https://waha.example.com",
+    "WAHA_API_KEY": "test-waha-api-key",
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
-    "BOOKING_LINK": "https://booking.example.com/test-schedule",
-}
+    "BOOKING_LINK": "https://booking.example.com/test-schedule"}
 
 
 @pytest.fixture
@@ -77,8 +76,7 @@ def _text_payload(*, message: str, button_payload: str | None = None) -> dict:
         "input_channel": "whatsapp_text",
         "message_sid": MESSAGE_SID,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     return payload
@@ -142,8 +140,7 @@ def test_arabic_qualification_turn_includes_conversation_language(mock_extract, 
         VALID_WHATSAPP_NUMBER,
         {
             "customer_type": "new_customer",
-            "referral_source": "google",
-        },
+            "referral_source": "google"},
     )
 
     response = _post_extract(client, _text_payload(message="أحتاج موقعًا جديدًا"))
@@ -171,8 +168,7 @@ def test_english_qualification_turn_includes_conversation_language(mock_extract,
     save_accepted_fields(
         VALID_WHATSAPP_NUMBER,
         {
-            "customer_type": "existing_customer",
-        },
+            "customer_type": "existing_customer"},
     )
 
     response = _post_extract(client, _text_payload(message="I need a new website"))
@@ -223,8 +219,7 @@ def test_arabic_old_phone_confirmation_session_completes_in_arabic(mock_extract,
             "project_type": "new_website",
             "requirements": "موقع مطعم",
             "referral_source": "إنستغرام",
-            "whatsapp_confirmed": False,
-        },
+            "whatsapp_confirmed": False},
     )
 
     response = _post_extract(client, _text_payload(message="مرحبا"))
@@ -252,8 +247,7 @@ def test_english_old_phone_confirmation_session_completes_in_english(mock_extrac
             "project_type": "new_website",
             "requirements": "restaurant website",
             "referral_source": "Instagram",
-            "whatsapp_confirmed": False,
-        },
+            "whatsapp_confirmed": False},
     )
 
     response = _post_extract(client, _text_payload(message="hello"))
@@ -281,8 +275,7 @@ def test_arabic_generic_retry_response_is_arabic(mock_extract, mock_send_picker,
         {
             "customer_type": "new_customer",
             "referral_source": "google",
-            "project_type": "new_website",
-        },
+            "project_type": "new_website"},
     )
 
     response = _post_extract(client, _text_payload(message="غير واضح"))
@@ -306,8 +299,7 @@ def test_arabic_human_handoff_response_is_arabic(mock_extract, mock_send_picker,
         {
             "customer_type": "new_customer",
             "referral_source": "google",
-            "project_type": "new_website",
-        },
+            "project_type": "new_website"},
     )
 
     response = _post_extract(client, _text_payload(message="أريد التحدث مع شخص"))
@@ -356,8 +348,7 @@ def test_arabic_completion_response_is_arabic(mock_extract, mock_send_picker, cl
             "customer_type": "new_customer",
             "project_type": "new_website",
             "requirements": "موقع مطعم",
-            "referral_source": "إنستغرام",
-        },
+            "referral_source": "إنستغرام"},
     )
 
     completion = _post_extract(client, _text_payload(message="Yes"))

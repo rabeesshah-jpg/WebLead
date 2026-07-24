@@ -28,14 +28,12 @@ CHANGE_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
 SELECT_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce92"
 
 LANGUAGE_PICKER_SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
-    "N8N_QUALIFICATION_API_SECRET": API_SECRET,
-}
+    "WAHA_BASE_URL": "https://waha.example.com",
+    "WAHA_API_KEY": "test-waha-api-key",
+    "N8N_QUALIFICATION_API_SECRET": API_SECRET}
 
 IN_PROGRESS_FIELDS = {
-    "customer_type": "new_customer",
-}
+    "customer_type": "new_customer"}
 
 
 def _expect_language_change_reply(*, language: str, next_field: str) -> str:
@@ -85,8 +83,7 @@ def _text_payload(
         "input_channel": "whatsapp_text",
         "message_sid": message_sid,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     return payload
@@ -94,20 +91,26 @@ def _text_payload(
 
 def _english_session_with_progress() -> WhatsAppConversationSession:
     save_accepted_fields(VALID_WHATSAPP_NUMBER, dict(IN_PROGRESS_FIELDS))
-    return WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=VALID_WHATSAPP_NUMBER,
-        language=LANGUAGE_ENGLISH,
-        language_selected_at=timezone.now(),
+        defaults={
+            "language": LANGUAGE_ENGLISH,
+            "language_selected_at": timezone.now(),
+        },
     )
+    return session
 
 
 def _arabic_session_with_progress() -> WhatsAppConversationSession:
     save_accepted_fields(VALID_WHATSAPP_NUMBER, dict(IN_PROGRESS_FIELDS))
-    return WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=VALID_WHATSAPP_NUMBER,
-        language=LANGUAGE_ARABIC,
-        language_selected_at=timezone.now(),
+        defaults={
+            "language": LANGUAGE_ARABIC,
+            "language_selected_at": timezone.now(),
+        },
     )
+    return session
 
 
 @override_settings(**LANGUAGE_PICKER_SETTINGS)
@@ -127,8 +130,7 @@ def test_slash_language_resends_picker_without_changing_language_or_data(
     assert response.json() == {
         "status": "awaiting_language_selection",
         "message": "Language selector sent.",
-        "language_command_action": "picker_sent",
-    }
+        "language_command_action": "picker_sent"}
     mock_send_picker.assert_called_once_with(to_number=f"whatsapp:{VALID_WHATSAPP_NUMBER}")
     mock_extract.assert_not_called()
     session.refresh_from_db()

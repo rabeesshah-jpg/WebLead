@@ -47,15 +47,14 @@ USER_A_WHATSAPP_PREFIX = "whatsapp:+923001234567"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
 USER_A_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 USER_B_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
-VOICE_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+VOICE_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 IN_PROGRESS_FIELDS = {
     "project_type": "new_website",
     "requirements": "A restaurant website with online ordering",
     "referral_source": "Google",
     "whatsapp_confirmed": True,
-    "preferred_phone": USER_A,
-}
+    "preferred_phone": USER_A}
 
 
 @pytest.fixture(autouse=True)
@@ -151,8 +150,7 @@ def test_extract_service_creates_session_for_new_number_on_first_turn():
         handled=True,
         response_payload={
             "status": "awaiting_language_selection",
-            "message": "Language selector sent.",
-        },
+            "message": "Language selector sent."},
     )
 
     assert not WhatsAppConversationSession.objects.filter(whatsapp_number=USER_B).exists()
@@ -165,8 +163,7 @@ def test_extract_service_creates_session_for_new_number_on_first_turn():
                 "input_channel": "whatsapp_text",
                 "message_sid": None,
                 "media_url": None,
-                "media_content_type": None,
-            }
+                "media_content_type": None}
         )
 
     session = WhatsAppConversationSession.objects.get(whatsapp_number=USER_B)
@@ -183,8 +180,7 @@ def test_extract_service_normalizes_number_before_session_lookup():
         handled=True,
         response_payload={
             "status": "awaiting_language_selection",
-            "message": "Language selector sent.",
-        },
+            "message": "Language selector sent."},
     )
 
     with patch.object(service._language_gate_service, "evaluate_turn", return_value=gate_response):
@@ -195,8 +191,7 @@ def test_extract_service_normalizes_number_before_session_lookup():
                 "input_channel": "whatsapp_text",
                 "message_sid": None,
                 "media_url": None,
-                "media_content_type": None,
-            }
+                "media_content_type": None}
         )
 
     assert WhatsAppConversationSession.objects.count() == 1
@@ -306,8 +301,7 @@ def test_existing_user_continues_while_new_user_starts_fresh():
         handled=True,
         response_payload={
             "status": "awaiting_language_selection",
-            "message": "Language selector sent.",
-        },
+            "message": "Language selector sent."},
     )
 
     with patch.object(service._language_gate_service, "evaluate_turn", return_value=gate_response):
@@ -318,8 +312,7 @@ def test_existing_user_continues_while_new_user_starts_fresh():
                 "input_channel": "whatsapp_text",
                 "message_sid": USER_B_MESSAGE_SID,
                 "media_url": None,
-                "media_content_type": None,
-            }
+                "media_content_type": None}
         )
 
     assert get_accepted_fields(USER_A) == IN_PROGRESS_FIELDS
@@ -337,8 +330,7 @@ def test_voice_and_text_inputs_share_session_for_same_number(mock_turn_handler):
         "next_field": "requirements",
         "reply_text": "Tell me more.",
         "qualification_status": "in_progress",
-        "preferred_phone": None,
-    }
+        "preferred_phone": None}
     transcription_service = MagicMock()
     transcription_service.transcribe.return_value = "I need a bakery website"
     service = ExtractService(transcription_service=transcription_service)
@@ -355,16 +347,14 @@ def test_voice_and_text_inputs_share_session_for_same_number(mock_turn_handler):
         "media_content_type": None,
         "call_sid": None,
         "utterance_id": None,
-        "is_final": True,
-    }
+        "is_final": True}
     voice_payload = {
         "whatsapp_number": USER_A_WHATSAPP_PREFIX,
         "message": None,
         "input_channel": "whatsapp_voice_note",
         "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce92",
         "media_url": VOICE_MEDIA_URL,
-        "media_content_type": "audio/ogg",
-    }
+        "media_content_type": "audio/ogg"}
 
     service.run_turn(text_payload)
     service.run_turn(voice_payload)
@@ -376,8 +366,7 @@ def test_voice_and_text_inputs_share_session_for_same_number(mock_turn_handler):
         "whatsapp_number": USER_A,
         "message": "I need a bakery website",
         "message_sid": voice_payload["message_sid"],
-        "for_voice": True,
-    }
+        "for_voice": True}
     transcription_service.transcribe.assert_called_once()
 
 

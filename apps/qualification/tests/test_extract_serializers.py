@@ -12,7 +12,7 @@ from apps.qualification.views import InvalidExtractRequestError, _parse_extract_
 
 VALID_MESSAGE = "I need a new website for a restaurant"
 VALID_WHATSAPP_NUMBER = "+923001234567"
-TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+WAHA_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 N8N_TEXT_PAYLOAD = {
     "message": "I need a website for my bakery",
@@ -20,8 +20,7 @@ N8N_TEXT_PAYLOAD = {
     "input_channel": "whatsapp_text",
     "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce90",
     "media_url": None,
-    "media_content_type": None,
-}
+    "media_content_type": None}
 N8N_VOICE_PAYLOAD = {
     "message": "",
     "whatsapp_number": "+923246271149",
@@ -31,14 +30,12 @@ N8N_VOICE_PAYLOAD = {
         "https://api.twilio.com/2010-04-01/Accounts/ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/"
         "Messages/MM0cc5a1d9e22bf9850ca24261ee23ce90/Media/MEyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
     ),
-    "media_content_type": "audio/ogg",
-}
+    "media_content_type": "audio/ogg"}
 
 TEXT_RESPONSE_PAYLOAD = {
     "accepted_fields": {
         "project_type": "new_website",
-        "requirements": "website for a restaurant",
-    },
+        "requirements": "website for a restaurant"},
     "rejected_fields": {"referral_source": "value_missing"},
     "human_handoff_requested": False,
     "next_field": "referral_source",
@@ -49,14 +46,12 @@ TEXT_RESPONSE_PAYLOAD = {
     "reply_mode": "text",
     "send_booking_link": False,
     "booking_link_sent": False,
-    "booking_link": None,
-}
+    "booking_link": None}
 
 VOICE_RESPONSE_PAYLOAD = {
     **TEXT_RESPONSE_PAYLOAD,
     "reply_mode": "voice",
-    "transcript": "I need a website for my bakery",
-}
+    "transcript": "I need a website for my bakery"}
 
 
 def _validated_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -85,8 +80,7 @@ def _parsed_request(payload: dict[str, Any]) -> dict[str, Any]:
         "call_sid": turn_request.call_sid,
         "utterance_id": turn_request.utterance_id,
         "is_final": turn_request.is_final,
-        "event_source": turn_request.event_source,
-    }
+        "event_source": turn_request.event_source}
 
 
 def _assert_request_parity(payload: dict[str, Any]) -> None:
@@ -104,8 +98,7 @@ def test_valid_text_payload_matches_parser():
     payload = {
         "message": VALID_MESSAGE,
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
-        "input_channel": "whatsapp_text",
-    }
+        "input_channel": "whatsapp_text"}
     _assert_request_parity(payload)
 
 
@@ -122,9 +115,8 @@ def test_valid_voice_payload_without_message_matches_parser():
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
         "input_channel": "whatsapp_voice_note",
         "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-        "media_url": TWILIO_MEDIA_URL,
-        "media_content_type": "audio/ogg",
-    }
+        "media_url": WAHA_MEDIA_URL,
+        "media_content_type": "audio/ogg"}
     _assert_request_parity(payload)
 
 
@@ -144,8 +136,7 @@ def test_invalid_whatsapp_number_is_invalid(whatsapp_number: object):
         data={
             "message": VALID_MESSAGE,
             "whatsapp_number": whatsapp_number,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
     assert not serializer.is_valid()
 
@@ -156,8 +147,7 @@ def test_invalid_input_channel_is_invalid(input_channel: object):
         data={
             "message": VALID_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": input_channel,
-        },
+            "input_channel": input_channel},
     )
     assert not serializer.is_valid()
 
@@ -173,8 +163,7 @@ def test_text_channel_blank_message_is_invalid(message: str):
         data={
             "message": message,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
     assert not serializer.is_valid()
 
@@ -186,20 +175,17 @@ def test_text_channel_blank_message_is_invalid(message: str):
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "media_url": None,
-            "media_content_type": "audio/ogg",
-        },
+            "media_content_type": "audio/ogg"},
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "video/mp4",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "video/mp4"},
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     ],
 )
 def test_voice_channel_invalid_media_fields_are_invalid(payload: dict[str, object]):
@@ -221,10 +207,9 @@ def test_invalid_message_sid_is_invalid(message_sid: str):
         data={
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
-            "media_url": TWILIO_MEDIA_URL,
+            "media_url": WAHA_MEDIA_URL,
             "media_content_type": "audio/ogg",
-            "message_sid": message_sid,
-        },
+            "message_sid": message_sid},
     )
     assert not serializer.is_valid()
 
@@ -241,10 +226,9 @@ def test_valid_message_sid_values_match_parser(message_sid: str):
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
-            "media_url": TWILIO_MEDIA_URL,
+            "media_url": WAHA_MEDIA_URL,
             "media_content_type": "audio/ogg",
-            "message_sid": message_sid,
-        },
+            "message_sid": message_sid},
     )
 
 
@@ -253,8 +237,7 @@ def test_extra_request_field_is_invalid():
         data={
             "message": VALID_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "extra": "field",
-        },
+            "extra": "field"},
     )
     assert not serializer.is_valid()
 
@@ -265,8 +248,7 @@ def test_voice_channel_defaults_missing_media_content_type_to_audio_ogg():
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-            "media_url": TWILIO_MEDIA_URL,
-        },
+            "media_url": WAHA_MEDIA_URL},
     )
     assert validated["media_content_type"] == "audio/ogg"
 
@@ -276,9 +258,8 @@ def test_voice_channel_requires_message_sid_when_media_url_present():
         data={
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     )
     assert not serializer.is_valid()
 
@@ -289,8 +270,7 @@ def test_media_url_without_input_channel_infers_voice_note():
             "message": "",
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-            "media_url": TWILIO_MEDIA_URL,
-        },
+            "media_url": WAHA_MEDIA_URL},
     )
     assert validated["input_channel"] == "whatsapp_voice_note"
     assert validated["media_content_type"] == "audio/ogg"
@@ -302,9 +282,8 @@ def test_text_channel_ignores_media_fields_in_validated_output():
             "message": VALID_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     )
     assert validated["media_url"] is None
     assert validated["media_content_type"] is None
@@ -324,9 +303,8 @@ def test_voice_channel_blank_or_missing_message_variants_match_parser(message_va
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
         "input_channel": "whatsapp_voice_note",
         "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-        "media_url": TWILIO_MEDIA_URL,
-        "media_content_type": "audio/ogg",
-    }
+        "media_url": WAHA_MEDIA_URL,
+        "media_content_type": "audio/ogg"}
     if "message" in message_value:
         payload["message"] = message_value["message"]
     _assert_request_parity(payload)
@@ -368,15 +346,13 @@ def test_response_serializer_accepts_voice_contract_payload_with_transcript():
         {
             "message": VALID_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         {
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     ],
 )
 def test_parser_parity_for_existing_contract_payloads(payload: dict[str, Any]):
@@ -391,8 +367,7 @@ def test_extract_serializer_accepts_optional_button_fields():
         "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce90",
         "button_payload": "lang_en",
         "button_text": "English",
-        "button_type": "quick_reply",
-    }
+        "button_type": "quick_reply"}
     validated = _validated_request(payload)
     assert validated["button_payload"] == "lang_en"
     assert validated["button_text"] == "English"
@@ -405,7 +380,6 @@ def test_extract_serializer_rejects_unknown_fields_with_button_payload_present()
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
         "input_channel": "whatsapp_text",
         "button_payload": "lang_en",
-        "unexpected": "value",
-    }
+        "unexpected": "value"}
     serializer = ExtractRequestSerializer(data=payload)
     assert not serializer.is_valid()

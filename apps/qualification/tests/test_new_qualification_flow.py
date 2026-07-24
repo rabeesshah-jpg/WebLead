@@ -56,8 +56,7 @@ COMPLETION_REPLY_TEXT = get_customer_message(
 def _completed_numbered_fields() -> dict:
     fields: dict = {
         "customer_type": "new_customer",
-        "referral_source": "google",
-    }
+        "referral_source": "google"}
     answers = ("1", "1", "1", "1", "1")
     for field, answer in zip(NUMBERED_QUALIFICATION_FIELDS, answers, strict=True):
         selection = normalize_numbered_qualification_answer(field, answer, language="en")
@@ -89,8 +88,7 @@ def _make_qualified_session(number: str, *, language: str = "en") -> WhatsAppCon
             "language": language,
             "language_selected_at": now,
             "booking_link_sent_at": now,
-            "qualified_at": now,
-        },
+            "qualified_at": now},
     )
     return session
 
@@ -101,8 +99,7 @@ def _post(client: Client, message: str, *, number: str = WHATSAPP_NUMBER) -> dic
         data={
             "message": message,
             "whatsapp_number": number,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -221,8 +218,7 @@ def test_facebook_referral_button_payload_moves_to_business_type(mock_extract, c
             "message": "Facebook",
             "button_payload": "facebook",
             "whatsapp_number": WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )

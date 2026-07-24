@@ -1,11 +1,13 @@
-"""Forward validated Twilio payloads to n8n."""
+"""Forward normalized inbound payloads to n8n."""
 
 from __future__ import annotations
 
+import json
 import logging
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -26,13 +28,19 @@ def _safe_webhook_target(url: str) -> str:
 
 
 def forward_to_n8n(
-    params: dict[str, str],
+    payload: dict[str, Any],
     *,
     webhook_url: str | None = None,
     webhook_secret: str | None = None,
     timeout_seconds: int | None = None,
+    as_json: bool = True,
 ) -> None:
-    """POST original form fields to the n8n production webhook."""
+    """
+    POST the normalized inbound payload to the n8n production webhook.
+
+    Default content type is JSON (WAHA → extract-shaped payload). Set
+    ``as_json=False`` only for legacy form-urlencoded debugging.
+    """
     url = (webhook_url if webhook_url is not None else settings.N8N_WEBHOOK_URL) or ""
     url = url.strip()
     secret = webhook_secret if webhook_secret is not None else settings.N8N_WEBHOOK_SECRET
@@ -42,14 +50,14 @@ def forward_to_n8n(
         else settings.N8N_FORWARD_TIMEOUT_SECONDS
     )
 
-    # Temporary safe diagnostics for Vercel env verification (no secrets).
     logger.info(
         "n8n_forward_config webhook_configured=%s webhook_target=%s timeout_seconds=%s "
-        "secret_configured=%s",
+        "secret_configured=%s as_json=%s",
         bool(url),
         _safe_webhook_target(url) if url else "",
         timeout,
         bool(secret),
+        as_json,
     )
 
     if not url:
@@ -58,9 +66,18 @@ def forward_to_n8n(
             "(set N8N_WEBHOOK_URL on Vercel / .env)",
         )
 
-    encoded_body = urllib.parse.urlencode(params).encode("utf-8")
+    if as_json:
+        encoded_body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        content_type = "application/json"
+    else:
+        encoded_body = urllib.parse.urlencode(
+            {key: "" if value is None else str(value) for key, value in payload.items()},
+        ).encode("utf-8")
+        content_type = "application/x-www-form-urlencoded"
+
     headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": content_type,
+        "Accept": "application/json",
     }
     if secret:
         headers["X-Internal-Webhook-Secret"] = secret

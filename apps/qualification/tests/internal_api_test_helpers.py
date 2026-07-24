@@ -16,7 +16,7 @@ ERROR_CONTRACT_400 = {"error": "Invalid request."}
 ERROR_CONTRACT_403 = {"error": "Forbidden."}
 ERROR_CONTRACT_500 = {"error": "Internal server error."}
 ERROR_CONTRACT_502 = {"error": "Qualification service request failed."}
-ERROR_CONTRACT_502_TWILIO = {"error": "Twilio media download failed."}
+ERROR_CONTRACT_502_TWILIO = {"error": "WhatsApp media download failed."}
 ERROR_CONTRACT_502_TRANSCRIPTION = {"error": "Voice transcription failed."}
 ERROR_CONTRACT_502_LLM = {"error": "Qualification LLM request failed."}
 ERROR_CONTRACT_503 = {"error": "Qualification service is unavailable."}
@@ -51,8 +51,7 @@ EXTRACT_SUCCESS_FIELD_NAMES = frozenset(
         "saved_services",
         "saved_requirements",
         "next_required_field",
-        "complete",
-    },
+        "complete"},
 )
 
 RENDER_AUDIO_SUCCESS_FIELD_NAMES = frozenset(
@@ -64,8 +63,7 @@ RENDER_AUDIO_SUCCESS_FIELD_NAMES = frozenset(
         "content_type",
         "audio_url",
         "audio_content_type",
-        "request_id",
-    },
+        "request_id"},
 )
 
 

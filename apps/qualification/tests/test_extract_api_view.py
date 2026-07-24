@@ -36,7 +36,7 @@ ENDPOINT_PATH = "/api/internal/qualification/extract/"
 ROUTE_NAME = "internal-qualification-extract"
 VALID_MESSAGE = "I need a new website for a restaurant"
 VALID_WHATSAPP_NUMBER = "+923001234567"
-TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+WAHA_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 VOICE_TRANSCRIPT = "I need a website for my bakery"
 _RICH_REPLY_BODY = "Thank you, I've noted that. Thank you. How did you hear about us?"
 _ONBOARDING_PREFIXED_REPLY = (
@@ -46,8 +46,7 @@ _ONBOARDING_PREFIXED_REPLY = (
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={
         "project_type": "new_website",
-        "requirements": "website for a restaurant",
-    },
+        "requirements": "website for a restaurant"},
     rejected_fields=(
         RejectedQualificationField(field_name="referral_source", reason="null value"),
     ),
@@ -58,8 +57,7 @@ EXPECTED_TEXT_RESPONSE = {
     "accepted_fields": {
         "project_type": "new_website",
         "requirements": VALID_MESSAGE,
-        "services_required": ["new_website"],
-    },
+        "services_required": ["new_website"]},
     "rejected_fields": {},
     "human_handoff_requested": False,
     "next_field": "referral_source",
@@ -78,8 +76,7 @@ EXPECTED_TEXT_RESPONSE = {
     "saved_services": ["new_website"],
     "saved_requirements": [VALID_MESSAGE],
     "next_required_field": "referral_source",
-    "complete": False,
-}
+    "complete": False}
 
 
 @pytest.fixture
@@ -181,8 +178,7 @@ def test_valid_text_request_returns_200_with_contract_body(mock_extract, client)
         {
             "message": VALID_MESSAGE,
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
     )
 
     assert response.status_code == 200
@@ -210,8 +206,7 @@ def test_message_sid_idempotency_returns_cached_response_without_second_turn(moc
         "message": VALID_MESSAGE,
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
         "input_channel": "whatsapp_text",
-        "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce90",
-    }
+        "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce90"}
 
     first = _post_extract(client, payload)
     second = _post_extract(client, payload)
@@ -239,9 +234,8 @@ def test_valid_voice_request_returns_200_with_transcript(
             "whatsapp_number": VALID_WHATSAPP_NUMBER,
             "input_channel": "whatsapp_voice_note",
             "message_sid": "MM0cc5a1d9e22bf9850ca24261ee23ce90",
-            "media_url": TWILIO_MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_url": WAHA_MEDIA_URL,
+            "media_content_type": "audio/ogg"},
     )
 
     assert response.status_code == 200

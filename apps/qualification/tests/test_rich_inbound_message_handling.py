@@ -29,8 +29,7 @@ def _post_text(client: Client, message: str) -> object:
         data={
             "message": message,
             "whatsapp_number": WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -46,13 +45,12 @@ def _post_voice(client: Client, message: str) -> object:
                 "message": message,
                 "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23cef1",
                 "media_url": (
-                    "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+                    "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
                 ),
                 "media_content_type": "audio/ogg",
                 "call_sid": CALL_SID,
                 "utterance_id": "utt-unsupported-1",
-                "is_final": True,
-            }
+                "is_final": True}
         ),
         content_type="application/json",
         **internal_api_auth_headers(),
@@ -80,8 +78,7 @@ def _reach_whatsapp_confirmation(client: Client) -> None:
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
 
@@ -123,8 +120,7 @@ def test_unsupported_question_defers_to_meeting_and_continues(mock_extract, clie
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "website",
-        },
+            "requirements": "website"},
     )
 
     response = _post_text(client, "Can you guarantee 1 million sales?")
@@ -249,8 +245,7 @@ def test_voice_unsupported_question_has_spoken_fallback_without_url(mock_extract
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "website",
-        },
+            "requirements": "website"},
     )
 
     response = _post_voice(client, "Can you guarantee 1 million sales?")

@@ -46,8 +46,7 @@ def _post_text(client: Client, message: str) -> object:
         data={
             "message": message,
             "whatsapp_number": WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -148,8 +147,7 @@ def test_completed_fields_are_not_repeated_after_small_talk(mock_extract, client
             "customer_type": "existing_customer",
             "business_type": "biz_local_service",
             "business_type_number": 1,
-            "business_type_answer": "Local service business (clinic, salon, restaurant)",
-        },
+            "business_type_answer": "Local service business (clinic, salon, restaurant)"},
     )
 
     response = _post_text(client, "How are you?")

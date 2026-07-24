@@ -32,8 +32,7 @@ def _post(client: Client, message: str, *, message_sid: str) -> object:
             "message": message,
             "whatsapp_number": WHATSAPP_NUMBER,
             "input_channel": "whatsapp_text",
-            "message_sid": message_sid,
-        },
+            "message_sid": message_sid},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -45,8 +44,7 @@ def _complete_qualification(client: Client) -> dict:
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
     response = _post(client, "Yes", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce80")
     body = response.json()

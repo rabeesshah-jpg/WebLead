@@ -38,8 +38,7 @@ VALID_PAYLOAD = {
     "referral_source": "Google",
     "whatsapp_confirmed": True,
     "preferred_phone": "+923246271156",
-    "send_booking_link": True,
-}
+    "send_booking_link": True}
 
 
 def voice_event_auth_headers(*, secret: str | None = VOICE_EVENT_SECRET) -> dict[str, str]:
@@ -57,8 +56,7 @@ def _post_voice_call_completed(
 ):
     headers: dict[str, str] = {
         "content_type": "application/json",
-        **voice_event_auth_headers(secret=secret),
-    }
+        **voice_event_auth_headers(secret=secret)}
     body = json.dumps(payload) if not isinstance(payload, (bytes, str)) else payload
     if isinstance(body, str):
         body = body.encode("utf-8")

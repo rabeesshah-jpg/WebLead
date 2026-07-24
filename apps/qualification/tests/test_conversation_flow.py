@@ -59,8 +59,7 @@ def _post(client: Client, message: str) -> object:
         data={
             "message": message,
             "whatsapp_number": WHATSAPP_NUMBER,
-            "input_channel": "whatsapp_text",
-        },
+            "input_channel": "whatsapp_text"},
         content_type="application/json",
         **internal_api_auth_headers(),
     )
@@ -127,8 +126,7 @@ def test_detected_existing_customer_starts_connecting_flow(
             "language": "en",
             "language_selected_at": now,
             "booking_link_sent_at": now,
-            "qualified_at": now,
-        },
+            "qualified_at": now},
     )
 
     response = _post(client, "existing")
@@ -157,8 +155,7 @@ def _seed_ready_for_final_numbered_question(number: str = WHATSAPP_NUMBER) -> No
 
     fields: dict = {
         "customer_type": "new_customer",
-        "referral_source": "facebook",
-    }
+        "referral_source": "facebook"}
     for field in NUMBERED_QUALIFICATION_FIELDS[:-1]:
         selection = normalize_numbered_qualification_answer(field, "1", language="en")
         assert selection is not None

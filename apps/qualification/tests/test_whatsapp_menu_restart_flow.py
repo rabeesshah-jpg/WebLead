@@ -28,20 +28,19 @@ pytestmark = [pytest.mark.django_db, pytest.mark.whatsapp_menu]
 
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 VALID_WHATSAPP_NUMBER = "+923001234567"
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 MENU_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 RESTART_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce91"
 VOICE_RESTART_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce93"
 NORMAL_QUAL_MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce94"
 
 MENU_SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
-    "TWILIO_WHATSAPP_MENU_CONTENT_SID": "HXtestmainmenucontentsid00000000",
+    
+    
+    
     "LEAD_QUALIFICATION_ENABLED": True,
     "SESSION_IDLE_RESET_SECONDS": 7200,
-    "N8N_QUALIFICATION_API_SECRET": API_SECRET,
-}
+    "N8N_QUALIFICATION_API_SECRET": API_SECRET}
 
 IN_PROGRESS_FIELDS = {
     "customer_type": "new_customer",
@@ -49,8 +48,7 @@ IN_PROGRESS_FIELDS = {
     "requirements": "A restaurant website with online ordering",
     "referral_source": "Google",
     "whatsapp_confirmed": True,
-    "preferred_phone": VALID_WHATSAPP_NUMBER,
-}
+    "preferred_phone": VALID_WHATSAPP_NUMBER}
 
 
 def _post_extract(client: Client, payload: dict) -> object:
@@ -74,8 +72,7 @@ def _text_payload(
         "input_channel": "whatsapp_text",
         "message_sid": message_sid,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     return payload
@@ -87,8 +84,7 @@ def _voice_payload(*, message_sid: str) -> dict:
         "input_channel": "whatsapp_voice_note",
         "message_sid": message_sid,
         "media_url": MEDIA_URL,
-        "media_content_type": "audio/ogg",
-    }
+        "media_content_type": "audio/ogg"}
 
 
 def _seed_session(*, language: str = LANGUAGE_ENGLISH) -> WhatsAppConversationSession:
@@ -180,8 +176,7 @@ def test_non_exact_uppercase_m_does_not_open_menu(
         {
             "project_type": "new_website",
             "requirements": "website",
-            "referral_source": "Google",
-        },
+            "referral_source": "Google"},
     )
 
     response = _post_extract(

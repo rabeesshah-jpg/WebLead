@@ -57,8 +57,7 @@ def _post(
     payload: dict[str, object] = {
         "message": message,
         "whatsapp_number": number,
-        "input_channel": "whatsapp_text",
-    }
+        "input_channel": "whatsapp_text"}
     if message_sid is not None:
         payload["message_sid"] = message_sid
     response = client.post(
@@ -87,8 +86,7 @@ def _seed_ready_for_website_status() -> None:
             "business_type": "biz_local_service",
             "business_type_option_id": "biz_local_service",
             "business_type_number": 1,
-            "business_type_answer": "Local service business (clinic, salon, restaurant)",
-        },
+            "business_type_answer": "Local service business (clinic, salon, restaurant)"},
     )
 
 
@@ -259,8 +257,7 @@ def test_duplicate_message_sid_does_not_double_advance(mock_extract, client):
         "message": "1",
         "whatsapp_number": WHATSAPP_NUMBER,
         "input_channel": "whatsapp_text",
-        "message_sid": MESSAGE_SID,
-    }
+        "message_sid": MESSAGE_SID}
 
     first = client.post(
         ENDPOINT_PATH,
@@ -291,8 +288,7 @@ def test_qualification_option_ids_are_stable_and_language_independent():
             "biz_local_service",
             "biz_coaching",
             "biz_ecommerce",
-            "biz_other",
-        }
+            "biz_other"}
     )
     assert QUALIFICATION_OPTIONS["paid_ads"] == frozenset(
         {
@@ -300,15 +296,13 @@ def test_qualification_option_ids_are_stable_and_language_independent():
             "ads_boost",
             "ads_lt_2k",
             "ads_2k_10k",
-            "ads_gt_10k",
-        }
+            "ads_gt_10k"}
     )
     assert QUALIFICATION_OPTIONS["main_goal"] == frozenset(
         {
             "goal_website_only",
             "goal_website_marketing",
-            "goal_more_customers",
-        }
+            "goal_more_customers"}
     )
     en = normalize_numbered_qualification_answer(
         "main_goal", "2", language="en"
@@ -541,8 +535,7 @@ def test_ads_under_2k_saves_paid_ads_and_advances(mock_extract, client):
             "customer_type": "new_customer",
             "referral_source": "facebook",
             "business_type": "biz_local_service",
-            "website_status": "site_old_professional",
-        },
+            "website_status": "site_old_professional"},
     )
 
     body = _post(client, "ads_under_2k")
@@ -567,8 +560,7 @@ def test_alias_already_saved_skips_step_without_repeating_question(mock_extract,
             "referral_source": "facebook",
             "business_type": "biz_local_service",
             # Raw Twilio alias (pre-fix storage) must still count as answered.
-            "website_status": "old_professional",
-        },
+            "website_status": "old_professional"},
     )
 
     turn = try_handle_qualification_step_turn(
@@ -593,8 +585,7 @@ def test_full_twilio_list_picker_journey_never_repeats_a_question(mock_extract, 
         "website_status": "Do you currently have a website?",
         "paid_ads": "Do you currently run paid ads?",
         "main_goal": "What are you mainly looking for from us right now?",
-        "launch_timeline": "How soon would you like to launch",
-    }
+        "launch_timeline": "How soon would you like to launch"}
     journey = [
         ("1", "customer_type", "new_customer", "WAITING_FOR_REFERRAL_SOURCE", "referral_source"),
         ("instagram", "referral_source", "instagram", "WAITING_FOR_BUSINESS_TYPE", "business_type"),
@@ -665,8 +656,7 @@ def test_stale_website_option_ignored_while_waiting_for_main_goal(
             "referral_source": "facebook",
             "business_type": "biz_local_service",
             "website_status": "site_old_professional",
-            "paid_ads": "ads_lt_2k",
-        },
+            "paid_ads": "ads_lt_2k"},
     )
 
     turn = try_handle_qualification_step_turn(

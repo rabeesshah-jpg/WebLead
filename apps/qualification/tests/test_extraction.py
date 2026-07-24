@@ -61,8 +61,7 @@ def test_json_schema_required_fields():
         "whatsapp_confirmed",
         "preferred_phone",
         "human_handoff_requested",
-        "confidence",
-    }
+        "confidence"}
     assert EXTRACTION_JSON_SCHEMA["additionalProperties"] is False
 
     confidence_required = set(EXTRACTION_JSON_SCHEMA["properties"]["confidence"]["required"])
@@ -83,9 +82,7 @@ def test_parse_valid_extraction_payload():
             "requirements": 0.94,
             "referral_source": 0.97,
             "whatsapp_confirmed": 0.96,
-            "preferred_phone": 0.96,
-        },
-    }
+            "preferred_phone": 0.96}}
     result = parse_extraction_payload(payload)
     assert result.project_type == "website_upgrade"
     assert result.requirements == "Redesign with ecommerce"
@@ -107,10 +104,8 @@ def test_parse_rejects_extra_fields():
             "requirements": 0.0,
             "referral_source": 0.0,
             "whatsapp_confirmed": 0.0,
-            "preferred_phone": 0.0,
-        },
-        "unexpected": True,
-    }
+            "preferred_phone": 0.0},
+        "unexpected": True}
     with pytest.raises(ExtractionParseError, match="Unexpected fields"):
         parse_extraction_payload(payload)
 
@@ -128,9 +123,7 @@ def test_parse_accepts_explicit_false_whatsapp_confirmed():
             "requirements": 0.0,
             "referral_source": 0.0,
             "whatsapp_confirmed": 0.95,
-            "preferred_phone": 0.92,
-        },
-    }
+            "preferred_phone": 0.92}}
     result = parse_extraction_payload(payload)
     assert result.whatsapp_confirmed is False
     assert result.preferred_phone == "+15559876543"

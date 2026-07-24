@@ -30,20 +30,17 @@ pytestmark = [pytest.mark.language_gate, pytest.mark.django_db]
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 VALID_WHATSAPP_NUMBER = "+923001234567"
 VOICE_MESSAGE_SID = "MM0cc5a1d9e22bf9850ca24261ee23ce90"
-TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+WAHA_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 DEEPGRAM_SETTINGS = {
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
-    "TWILIO_ACCOUNT_SID": "ACtesttwilioaccountsidthirtyfour",
-    "TWILIO_AUTH_TOKEN": "test-twilio-auth-token",
+    "WAHA_BASE_URL": "https://waha.example.com",
+    "WAHA_API_KEY": "test-waha-api-key",
     "DEEPGRAM_API_KEY": "test-deepgram-api-key",
     "DEEPGRAM_MODEL": "nova-2",
     "DEEPGRAM_LANGUAGE": "en",
     "DEEPGRAM_ARABIC_MODEL": "nova-3",
-    "DEEPGRAM_ARABIC_LANGUAGE": "ar",
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
-}
+    "DEEPGRAM_ARABIC_LANGUAGE": "ar"}
 
 
 @pytest.fixture
@@ -71,9 +68,8 @@ def _voice_payload(*, message_sid: str = VOICE_MESSAGE_SID) -> dict:
         "whatsapp_number": VALID_WHATSAPP_NUMBER,
         "input_channel": "whatsapp_voice_note",
         "message_sid": message_sid,
-        "media_url": TWILIO_MEDIA_URL,
-        "media_content_type": "audio/ogg",
-    }
+        "media_url": WAHA_MEDIA_URL,
+        "media_content_type": "audio/ogg"}
 
 
 def _post_extract(client: Client, payload: dict) -> object:

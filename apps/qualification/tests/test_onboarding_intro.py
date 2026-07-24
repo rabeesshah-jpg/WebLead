@@ -32,17 +32,16 @@ pytestmark = [pytest.mark.django_db, pytest.mark.language_gate]
 
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 SETTINGS = {
-    "TWILIO_LANGUAGE_PICKER_CONTENT_SID": "HXtestcontentsidfortest0000000000",
-    "TWILIO_WHATSAPP_FROM_NUMBER": "whatsapp:+15557654321",
-    "TWILIO_WHATSAPP_MENU_CONTENT_SID": "HXtestmainmenucontentsid00000000",
+    
+    
+    
     "LEAD_QUALIFICATION_ENABLED": True,
     "N8N_QUALIFICATION_API_SECRET": API_SECRET,
     "ONBOARDING_REINTRO_AFTER_SECONDS": 7200,
-    "SESSION_IDLE_RESET_SECONDS": 7200,
-}
+    "SESSION_IDLE_RESET_SECONDS": 7200}
 
 
 def _post(client: Client, payload: dict) -> object:
@@ -59,8 +58,7 @@ def _text(*, message: str, message_sid: str, button_payload: str | None = None) 
         "message": message,
         "whatsapp_number": WHATSAPP_NUMBER,
         "input_channel": "whatsapp_text",
-        "message_sid": message_sid,
-    }
+        "message_sid": message_sid}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     return payload
@@ -170,8 +168,7 @@ def test_first_voice_note_small_talk_skips_onboarding_intro(
             "input_channel": "whatsapp_voice_note",
             "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce10",
             "media_url": MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_content_type": "audio/ogg"},
     )
     body = response.json()
     text_intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
@@ -210,8 +207,7 @@ def test_first_voice_website_request_asks_project_question_not_phone(
             "input_channel": "whatsapp_voice_note",
             "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce11",
             "media_url": MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_content_type": "audio/ogg"},
     )
     body = response.json()
     text_intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
@@ -245,8 +241,7 @@ def test_finalize_voice_turn_uses_spoken_text_not_reply_text_for_tts():
             "reply_text": whatsapp_text,
             "whatsapp_text": whatsapp_text,
             "spoken_text": voice_intro,
-            "qualification_status": "in_progress",
-        },
+            "qualification_status": "in_progress"},
         input_channel="whatsapp_voice_note",
         transcript="hello",
         conversation_language=LANGUAGE_ENGLISH,
@@ -383,8 +378,7 @@ def test_voice_after_two_hours_preserves_qualification_state(
             "input_channel": "whatsapp_voice_note",
             "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce52",
             "media_url": MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_content_type": "audio/ogg"},
     )
     body = response.json()
     intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
@@ -422,8 +416,7 @@ def test_message_after_sixty_one_seconds_preserves_state(
         {
             "project_type": "new_website",
             "requirements": "restaurant website",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
     response = _post(
@@ -467,8 +460,7 @@ def test_voice_after_sixty_one_seconds_preserves_state(
         {
             "project_type": "new_website",
             "requirements": "restaurant website",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
     response = _post(
@@ -478,8 +470,7 @@ def test_voice_after_sixty_one_seconds_preserves_state(
             "input_channel": "whatsapp_voice_note",
             "message_sid": "SM0cc5a1d9e22bf9850ca24261ee23ce61",
             "media_url": MEDIA_URL,
-            "media_content_type": "audio/ogg",
-        },
+            "media_content_type": "audio/ogg"},
     )
     body = response.json()
     intro = get_customer_message(language=LANGUAGE_ENGLISH, key="onboarding_intro")
@@ -535,8 +526,7 @@ def test_hello_brother_after_long_gap_preserves_state(mock_extract, client):
             "requirements": "ecommerce",
             "referral_source": "Instagram",
             "whatsapp_confirmed": True,
-            "preferred_phone": WHATSAPP_NUMBER,
-        },
+            "preferred_phone": WHATSAPP_NUMBER},
     )
 
     response = _post(
@@ -619,8 +609,7 @@ def test_change_language_from_menu_opens_picker_and_continues(
         WHATSAPP_NUMBER,
         {
             "project_type": "new_website",
-            "requirements": "restaurant website",
-        },
+            "requirements": "restaurant website"},
     )
 
     _post(client, _text(message="M", message_sid="SM0cc5a1d9e22bf9850ca24261ee23ce30"))

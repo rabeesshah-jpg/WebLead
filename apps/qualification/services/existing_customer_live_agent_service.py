@@ -2,11 +2,11 @@
 
 Flow (automatic detection only; no Celery / Redis / Timer):
 
-1. Send connecting WhatsApp text via Twilio.
+1. Send connecting WhatsApp text via WAHA.
 2. ``time.sleep(5)`` so the first message can be seen before the follow-up.
-3. Send the Noura welcome follow-up via Twilio.
-4. Return the Business Type List Picker trigger for n8n in the same HTTP response
-   (Django does not send the picker; n8n does).
+3. Send the Noura welcome follow-up via WAHA.
+4. Send the Business Type list via WAHA and return ``option_template=business_type``
+   so n8n does not also send a template.
 5. Persist ``existing_customer_followup_sent`` / session markers once.
 """
 
@@ -28,9 +28,6 @@ from apps.qualification.domain.option_template_delivery import (
     WAITING_FOR_BUSINESS_TYPE_STATE,
 )
 from apps.qualification.domain.validators import normalize_whatsapp_session_number
-from apps.qualification.integrations.twilio_business_type_picker import (
-    resolve_business_type_content_sid,
-)
 from apps.qualification.integrations.twilio_whatsapp_message import (
     send_whatsapp_text_message,
 )
@@ -122,18 +119,30 @@ def _business_type_picker_response(
     accepted_fields: dict[str, Any],
     language: str,
     duplicate_suppressed: bool = False,
+    whatsapp_number: str | None = None,
 ) -> dict[str, Any]:
     """
-    n8n contract after Twilio already sent connecting + Noura.
+    Response after connecting + Noura texts; Django sends the business_type list via WAHA.
 
-    Empty reply_text so n8n does not send numbered Body text; List Picker only.
+    Empty reply_text so n8n does not send numbered Body text; list picker only.
     """
-    content_sid = resolve_business_type_content_sid(language)
     fields = dict(accepted_fields)
     fields["customer_type"] = "existing_customer"
     fields["qualification_step"] = BUSINESS_TYPE_OPTION_TEMPLATE
     fields["qualification_complete"] = False
     fields["existing_customer_followup_sent"] = True
+    if whatsapp_number and not duplicate_suppressed:
+        try:
+            from apps.whatsapp.message_service import send_business_type_list
+
+            send_business_type_list(to_number=whatsapp_number, language=language)
+        except Exception:  # noqa: BLE001
+            log_qualification_event(
+                "existing_customer_business_type_waha_send_failed",
+                level=logging.ERROR,
+                whatsapp_number_prefix=whatsapp_number[:6],
+                conversation_language=language,
+            )
     return {
         "accepted_fields": fields,
         "rejected_fields": {},
@@ -147,7 +156,7 @@ def _business_type_picker_response(
         "conversation_language": language,
         "conversation_state": WAITING_FOR_BUSINESS_TYPE_STATE,
         "option_template": BUSINESS_TYPE_OPTION_TEMPLATE,
-        "business_type_content_sid": content_sid,
+        "business_type_content_sid": None,
         "qualification_step": BUSINESS_TYPE_OPTION_TEMPLATE,
         "qualification_complete": False,
         "should_send_qualification_question": True,
@@ -231,6 +240,7 @@ def _send_noura_followup(
                     accepted_fields=persisted,
                     language=normalized_language,
                     duplicate_suppressed=True,
+                    whatsapp_number=canonical_number,
                 )
             log_qualification_event(
                 "existing_customer_duplicate_flow_suppressed",
@@ -299,6 +309,7 @@ def _send_noura_followup(
     return _business_type_picker_response(
         accepted_fields=persisted,
         language=normalized_language,
+        whatsapp_number=canonical_number,
     )
 
 

@@ -25,8 +25,7 @@ def _seed_ready_for_business_type(number: str = WHATSAPP_NUMBER) -> None:
     save_accepted_fields(
         number,
         {
-            "customer_type": "existing_customer",
-        },
+            "customer_type": "existing_customer"},
     )
 
 
@@ -56,8 +55,7 @@ def _post(
     payload = {
         "message": message,
         "whatsapp_number": number,
-        "input_channel": input_channel,
-    }
+        "input_channel": input_channel}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     response = client.post(

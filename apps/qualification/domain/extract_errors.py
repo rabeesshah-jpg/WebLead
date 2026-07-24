@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TWILIO_MEDIA_DOWNLOAD_FAILED = "Twilio media download failed."
+TWILIO_MEDIA_DOWNLOAD_FAILED = "WhatsApp media download failed."
+WAHA_MEDIA_DOWNLOAD_FAILED = TWILIO_MEDIA_DOWNLOAD_FAILED
 VOICE_TRANSCRIPTION_FAILED = "Voice transcription failed."
 QUALIFICATION_LLM_REQUEST_FAILED = "Qualification LLM request failed."
 

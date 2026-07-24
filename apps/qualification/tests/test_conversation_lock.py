@@ -50,8 +50,7 @@ def _text_payload(
         "whatsapp_number": whatsapp_number,
         "message": message,
         "input_channel": "whatsapp_text",
-        "message_sid": message_sid,
-    }
+        "message_sid": message_sid}
 
 
 def _turn_response(reply_text: str = "Hello there") -> dict:
@@ -63,8 +62,7 @@ def _turn_response(reply_text: str = "Hello there") -> dict:
         "reply_text": reply_text,
         "qualification_status": "in_progress",
         "preferred_phone": None,
-        "conversation_language": "en",
-    }
+        "conversation_language": "en"}
 
 
 def _service(turn_handler: MagicMock | Callable[..., dict]) -> ExtractService:
@@ -380,9 +378,8 @@ def test_voice_and_text_close_together_for_same_user_are_serialized(mock_transcr
                         "message": None,
                         "input_channel": "whatsapp_voice_note",
                         "message_sid": MESSAGE_SID_B,
-                        "media_url": "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001",
-                        "media_content_type": "audio/ogg",
-                    }
+                        "media_url": "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg",
+                        "media_content_type": "audio/ogg"}
                 )
             )
         except BaseException as exc:
@@ -406,8 +403,7 @@ def test_render_audio_skips_empty_spoken_text():
     result = RenderAudioService(renderer=renderer).render(
         {
             "text": "   ",
-            "whatsapp_number": WHATSAPP_A,
-        }
+            "whatsapp_number": WHATSAPP_A}
     )
     assert result["status"] == "skipped_empty"
     assert result["media_url"] is None

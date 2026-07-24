@@ -24,7 +24,7 @@ ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
 BOOKING_LINK = "https://booking.example.com/test-schedule"
 MEDIA_URL = (
-    "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+    "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 )
 VOICE_COMPLETION_SPOKEN = get_customer_message(
     language="en",
@@ -68,8 +68,7 @@ def _post_turn(
 ) -> object:
     payload: dict[str, object] = {
         "whatsapp_number": WHATSAPP_NUMBER,
-        "input_channel": input_channel,
-    }
+        "input_channel": input_channel}
     if message is not None:
         payload["message"] = message
     if message_sid is not None:
@@ -115,8 +114,7 @@ def _reach_whatsapp_confirmation_prompt() -> None:
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
 

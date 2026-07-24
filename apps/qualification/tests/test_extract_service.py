@@ -18,7 +18,7 @@ pytestmark = pytest.mark.django_db
 
 VALID_MESSAGE = "I need a new website for a restaurant"
 VALID_WHATSAPP_NUMBER = "+923001234567"
-TWILIO_MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+WAHA_MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 MESSAGE_SID = "SM0cc5a1d9e22bf9850ca24261ee23ce90"
 VOICE_TRANSCRIPT = "I need a website for my bakery"
 REFERRAL_QUESTION = "Thank you. How did you hear about us?"
@@ -42,8 +42,7 @@ def _expected_turn_response(*, channel: str = "text") -> dict:
     payload = {
         "accepted_fields": {
             "project_type": "new_website",
-            "requirements": "website for a restaurant",
-        },
+            "requirements": "website for a restaurant"},
         "rejected_fields": {"referral_source": "value_missing"},
         "human_handoff_requested": False,
         "next_field": "referral_source",
@@ -57,16 +56,14 @@ def _expected_turn_response(*, channel: str = "text") -> dict:
         "actions": [],
         "send_booking_link": False,
         "booking_link_sent": False,
-        "booking_link": None,
-    }
+        "booking_link": None}
     return payload
 
 
 SAMPLE_FILTER_RESULT = QualificationFieldFilterResult(
     accepted_fields={
         "project_type": "new_website",
-        "requirements": "website for a restaurant",
-    },
+        "requirements": "website for a restaurant"},
     rejected_fields=(
         RejectedQualificationField(field_name="referral_source", reason="null value"),
     ),
@@ -79,17 +76,15 @@ TEXT_VALIDATED_DATA = {
     "input_channel": "whatsapp_text",
     "message_sid": None,
     "media_url": None,
-    "media_content_type": None,
-}
+    "media_content_type": None}
 
 VOICE_VALIDATED_DATA = {
     "whatsapp_number": VALID_WHATSAPP_NUMBER,
     "message": None,
     "input_channel": "whatsapp_voice_note",
     "message_sid": None,
-    "media_url": TWILIO_MEDIA_URL,
-    "media_content_type": "audio/ogg",
-}
+    "media_url": WAHA_MEDIA_URL,
+    "media_content_type": "audio/ogg"}
 
 
 @pytest.fixture(autouse=True)
@@ -119,8 +114,7 @@ def test_text_input_does_not_call_transcription_service(mock_turn_handler):
         "next_field": "referral_source",
         "reply_text": "Thank you. How did you hear about us?",
         "qualification_status": "in_progress",
-        "preferred_phone": None,
-    }
+        "preferred_phone": None}
     transcription_service = MagicMock()
 
     ExtractService(
@@ -148,8 +142,7 @@ def test_voice_input_calls_transcription_service_once(mock_turn_handler):
         "next_field": "referral_source",
         "reply_text": "Thank you. How did you hear about us?",
         "qualification_status": "in_progress",
-        "preferred_phone": None,
-    }
+        "preferred_phone": None}
 
     ExtractService(
         transcription_service=transcription_service,
@@ -157,7 +150,7 @@ def test_voice_input_calls_transcription_service_once(mock_turn_handler):
     ).run_turn(VOICE_VALIDATED_DATA)
 
     transcription_service.transcribe.assert_called_once_with(
-        media_url=TWILIO_MEDIA_URL,
+        media_url=WAHA_MEDIA_URL,
         media_content_type="audio/ogg",
         message_sid=None,
         conversation_language="en",
@@ -179,8 +172,7 @@ def test_text_turn_returns_expected_payload(mock_turn_handler):
         "next_field": "referral_source",
         "reply_text": "Thank you. How did you hear about us?",
         "qualification_status": "in_progress",
-        "preferred_phone": None,
-    }
+        "preferred_phone": None}
 
     result = ExtractService(turn_handler=mock_turn_handler).run_turn(TEXT_VALIDATED_DATA)
 
@@ -196,8 +188,7 @@ def test_voice_turn_returns_expected_payload_with_transcript(mock_turn_handler):
         "next_field": "referral_source",
         "reply_text": "Thank you. How did you hear about us?",
         "qualification_status": "in_progress",
-        "preferred_phone": None,
-    }
+        "preferred_phone": None}
     transcription_service = MagicMock()
     transcription_service.transcribe.return_value = VOICE_TRANSCRIPT
 
@@ -221,8 +212,7 @@ def test_duplicate_message_sid_returns_cached_payload_without_second_turn(mock_t
         "next_field": "referral_source",
         "reply_text": "Thank you. How did you hear about us?",
         "qualification_status": "in_progress",
-        "preferred_phone": None,
-    }
+        "preferred_phone": None}
     validated_data = {**TEXT_VALIDATED_DATA, "message_sid": MESSAGE_SID}
     service = ExtractService(turn_handler=mock_turn_handler)
 

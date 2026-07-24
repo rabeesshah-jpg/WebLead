@@ -1,23 +1,22 @@
-"""Tests for Twilio media download helpers."""
+"""Tests for WAHA media download (compat shim download_twilio_media)."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 from django.test import override_settings
 
 from apps.qualification.twilio_media import download_twilio_media
 
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 
 
 @override_settings(
-    TWILIO_ACCOUNT_SID="ACtesttwilioaccountsidthirtyfour",
-    TWILIO_AUTH_TOKEN="test-twilio-auth-token",
+    WAHA_BASE_URL="https://waha.example.com",
+    WAHA_API_KEY="test-waha-api-key",
 )
-@patch("apps.qualification.twilio_media.urllib.request.urlopen")
-def test_download_twilio_media_returns_bytes_and_content_type(mock_urlopen):
+@patch("apps.whatsapp.waha_client.urllib.request.urlopen")
+def test_download_waha_media_returns_bytes_and_content_type(mock_urlopen):
     class FakeResponse:
         headers = {"Content-Type": "audio/ogg"}
         _returned = False

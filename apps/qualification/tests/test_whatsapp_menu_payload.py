@@ -23,16 +23,14 @@ from apps.qualification.domain.whatsapp_menu_payload import (
         ({"message": "WebLead Connect: Please choose an option: Change language"}, "language"),
         (
             {
-                "interactive_data": '{"data":{"context":{"buttonPayload":"language"}}}',
-            },
+                "interactive_data": '{"data":{"context":{"buttonPayload":"language"}}}'},
             "language",
         ),
         (
             {
                 "channel_metadata": (
                     '{"data":{"context":{"buttonPayload":"language","buttonType":"ACTION"}}}'
-                ),
-            },
+                )},
             "language",
         ),
     ],

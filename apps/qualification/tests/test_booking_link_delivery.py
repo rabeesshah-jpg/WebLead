@@ -29,7 +29,7 @@ pytestmark = pytest.mark.django_db
 BOOKING_LINK = "https://booking.example.com/test-schedule"
 ENDPOINT_PATH = "/api/internal/qualification/extract/"
 WHATSAPP_NUMBER = "+923001234567"
-MEDIA_URL = "https://api.twilio.com/2010-04-01/Accounts/ACtest/Media/MEtestvoice001"
+MEDIA_URL = "https://waha.example.com/api/files/true_923246271149@c.us_VOICE001.ogg"
 TEXT_COMPLETION_WITH_LINK = get_customer_message(
     language="en",
     key="completion_with_booking_link",
@@ -50,8 +50,7 @@ COMPLETED_FIELDS = {
     "requirements": "I need a new website for my restaurant",
     "referral_source": "Facebook",
     "whatsapp_confirmed": True,
-    "preferred_phone": WHATSAPP_NUMBER,
-}
+    "preferred_phone": WHATSAPP_NUMBER}
 
 
 def _seed_completed_qualification() -> None:
@@ -80,8 +79,7 @@ def _post_turn(
         "input_channel": input_channel,
         "message_sid": message_sid,
         "media_url": media_url,
-        "media_content_type": "audio/ogg" if media_url else None,
-    }
+        "media_content_type": "audio/ogg" if media_url else None}
     if message is not None:
         payload["message"] = message
     return client.post(
@@ -105,9 +103,9 @@ def _reset_state():
 
 def test_deliver_booking_link_whatsapp_text_marks_session_once():
     _seed_completed_qualification()
-    session = WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=WHATSAPP_NUMBER,
-        language="en",
+        defaults={"language": "en"},
     )
     sender = MagicMock(return_value="SMbookinglink0000000000000001")
 
@@ -137,10 +135,12 @@ def test_deliver_booking_link_whatsapp_text_marks_session_once():
 
 
 def test_send_booking_link_once_blocks_duplicate_url():
-    session = WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=WHATSAPP_NUMBER,
-        language="en",
-        booking_link_sent_at=timezone.now(),
+        defaults={
+            "language": "en",
+            "booking_link_sent_at": timezone.now(),
+        },
     )
 
     result = send_booking_link_once(
@@ -160,9 +160,9 @@ def test_send_booking_link_once_blocks_duplicate_url():
 
 @override_settings(BOOKING_LINK=BOOKING_LINK)
 def test_send_booking_link_once_first_send_includes_url_once():
-    session = WhatsAppConversationSession.objects.create(
+    session, _ = WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=WHATSAPP_NUMBER,
-        language="en",
+        defaults={"language": "en"},
     )
 
     result = send_booking_link_once(
@@ -196,8 +196,7 @@ def test_ensure_booking_link_delivery_preserves_inline_url():
         "spoken_text": VOICE_COMPLETION_SPOKEN,
         "send_booking_link": True,
         "booking_link_sent": True,
-        "booking_link": BOOKING_LINK,
-    }
+        "booking_link": BOOKING_LINK}
     updated = ensure_booking_link_delivery_on_response(
         payload,
         whatsapp_number=WHATSAPP_NUMBER,
@@ -227,8 +226,7 @@ def test_ensure_booking_link_delivery_inline_url_persists_session_markers():
         "send_booking_link": True,
         "booking_link_sent": True,
         "booking_link": BOOKING_LINK,
-        "conversation_language": "en",
-    }
+        "conversation_language": "en"}
     ensure_booking_link_delivery_on_response(
         payload,
         whatsapp_number=WHATSAPP_NUMBER,
@@ -255,8 +253,7 @@ def test_ensure_booking_link_delivery_inline_url_logs_persisted_event(caplog):
         "send_booking_link": True,
         "booking_link_sent": True,
         "booking_link": BOOKING_LINK,
-        "conversation_language": "en",
-    }
+        "conversation_language": "en"}
     with caplog.at_level(logging.INFO, logger="apps.qualification"):
         ensure_booking_link_delivery_on_response(
             payload,
@@ -302,8 +299,7 @@ def test_inline_booking_url_customer_detected_as_existing_after_idle_reset():
         "send_booking_link": True,
         "booking_link_sent": True,
         "booking_link": BOOKING_LINK,
-        "conversation_language": "en",
-    }
+        "conversation_language": "en"}
     ensure_booking_link_delivery_on_response(
         payload,
         whatsapp_number=WHATSAPP_NUMBER,
@@ -354,10 +350,12 @@ def test_deliver_booking_link_whatsapp_text_logs_delivery_event(caplog):
 
 def test_deliver_booking_link_whatsapp_text_logs_duplicate_suppression(caplog):
     _seed_completed_qualification()
-    WhatsAppConversationSession.objects.create(
+    WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=WHATSAPP_NUMBER,
-        language="en",
-        booking_link_sent_at=timezone.now(),
+        defaults={
+            "language": "en",
+            "booking_link_sent_at": timezone.now(),
+        },
     )
     sender = MagicMock(return_value="SMbookinglink0000000000000001")
 
@@ -386,8 +384,7 @@ def _reach_whatsapp_confirmation_prompt() -> None:
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
 
 
@@ -399,10 +396,12 @@ def test_booking_link_sent_after_server_restart_clears_stale_session_flag(
     client: Client,
 ):
     """Simulate runserver restart: DB session still marked sent, memory state cleared."""
-    WhatsAppConversationSession.objects.create(
+    WhatsAppConversationSession.objects.update_or_create(
         whatsapp_number=WHATSAPP_NUMBER,
-        language="en",
-        booking_link_sent_at=timezone.now(),
+        defaults={
+            "language": "en",
+            "booking_link_sent_at": timezone.now(),
+        },
     )
     clear_conversations()
     _reach_whatsapp_confirmation_prompt()
@@ -490,8 +489,7 @@ def test_cached_completion_with_send_booking_link_false_does_not_send(
                 "project_type": "new_website",
                 "requirements": "I need a new website for my restaurant",
                 "referral_source": "Facebook",
-                "whatsapp_confirmed": True,
-            },
+                "whatsapp_confirmed": True},
             "rejected_fields": {},
             "human_handoff_requested": False,
             "next_field": None,
@@ -502,8 +500,7 @@ def test_cached_completion_with_send_booking_link_false_does_not_send(
             "reply_mode": "text",
             "send_booking_link": False,
             "booking_link_sent": True,
-            "booking_link": BOOKING_LINK,
-        },
+            "booking_link": BOOKING_LINK},
     )
 
     response = _post_turn(
@@ -531,8 +528,7 @@ def test_duplicate_completion_message_sid_does_not_resend_booking_link(
         {
             "project_type": "new_website",
             "requirements": "I need a new website for my restaurant",
-            "referral_source": "Facebook",
-        },
+            "referral_source": "Facebook"},
     )
     message_sid = "SM0cc5a1d9e22bf9850ca24261ee23ceb9"
     payload = {
@@ -541,8 +537,7 @@ def test_duplicate_completion_message_sid_does_not_resend_booking_link(
         "input_channel": "whatsapp_text",
         "message_sid": message_sid,
         "media_url": None,
-        "media_content_type": None,
-    }
+        "media_content_type": None}
 
     first = client.post(
         ENDPOINT_PATH,

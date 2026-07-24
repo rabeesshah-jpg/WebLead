@@ -22,6 +22,8 @@ from apps.qualification.persistence.backends import (
 )
 from apps.qualification.public_urls import get_public_media_base_url
 
+pytestmark = pytest.mark.django_db
+
 
 @pytest.fixture(autouse=True)
 def _reset_backend():

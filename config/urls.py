@@ -13,6 +13,7 @@ urlpatterns = [
     path("", healthcheck, name="healthcheck"),
     path("api/webhooks/", include("apps.webhooks.urls")),
     path("api/internal/qualification/", include("apps.qualification.urls")),
+    path("api/internal/whatsapp/", include("apps.whatsapp.urls")),
     path(
         "media/whatsapp_voice_replies/<uuid:audio_id>/",
         media_views.whatsapp_voice_reply_media,

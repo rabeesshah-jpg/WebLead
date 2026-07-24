@@ -37,8 +37,7 @@ def _seed_existing_customer(number: str = WHATSAPP_NUMBER) -> None:
             "language": "en",
             "language_selected_at": now,
             "booking_link_sent_at": now,
-            "qualified_at": now,
-        },
+            "qualified_at": now},
     )
 
 
@@ -68,8 +67,7 @@ def _post(
     payload = {
         "message": message,
         "whatsapp_number": number,
-        "input_channel": input_channel,
-    }
+        "input_channel": input_channel}
     if button_payload is not None:
         payload["button_payload"] = button_payload
     response = client.post(
