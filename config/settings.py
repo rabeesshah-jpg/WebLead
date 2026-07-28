@@ -128,46 +128,151 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
-# WAHA (WhatsApp HTTP API) transport.
-WAHA_BASE_URL = env("WAHA_BASE_URL", default="").rstrip("/")
-WAHA_SESSION = env("WAHA_SESSION", default="default") or "default"
-WAHA_API_KEY = env("WAHA_API_KEY", default="")
-# Optional dedicated inbound webhook secret; falls back to WAHA_API_KEY when empty.
-WAHA_WEBHOOK_SECRET = env("WAHA_WEBHOOK_SECRET", default="")
+# Twilio WhatsApp transport.
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
+TWILIO_WHATSAPP_FROM_NUMBER = env("TWILIO_WHATSAPP_FROM_NUMBER", default="")
 
-_WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
-    "WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
+TWILIO_LANGUAGE_PICKER_CONTENT_SID = env(
+    "TWILIO_LANGUAGE_PICKER_CONTENT_SID",
+    default="",
+)
+
+TWILIO_WHATSAPP_MENU_CONTENT_SID = env(
+    "TWILIO_WHATSAPP_MENU_CONTENT_SID",
+    default="",
 )
 
 
-def _load_waha_media_download_timeout_seconds() -> int:
-    raw_value = env("WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS", default="30") or "30"
+_TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
+    "TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
+)
+
+
+def _load_twilio_media_download_timeout_seconds() -> int:
+    raw_value = (
+        env("TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS", default="30")
+        or "30"
+    )
+
     try:
         timeout_seconds = int(raw_value)
     except (TypeError, ValueError) as exc:
-        raise ImproperlyConfigured(_WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR) from exc
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR,
+        ) from exc
+
     if timeout_seconds <= 0:
-        raise ImproperlyConfigured(_WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR)
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR,
+        )
+
     return timeout_seconds
 
 
-WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = _load_waha_media_download_timeout_seconds()
+TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = (
+    _load_twilio_media_download_timeout_seconds()
+)
 
-_WAHA_MEDIA_MAX_BYTES_ERROR = "WAHA_MEDIA_MAX_BYTES must be a positive integer."
+
+_TWILIO_MEDIA_MAX_BYTES_ERROR = (
+    "TWILIO_MEDIA_MAX_BYTES must be a positive integer."
+)
 
 
-def _load_waha_media_max_bytes() -> int:
-    raw_value = env("WAHA_MEDIA_MAX_BYTES", default="10485760") or "10485760"
+def _load_twilio_media_max_bytes() -> int:
+    raw_value = (
+        env("TWILIO_MEDIA_MAX_BYTES", default="10485760")
+        or "10485760"
+    )
+
     try:
         max_bytes = int(raw_value)
     except (TypeError, ValueError) as exc:
-        raise ImproperlyConfigured(_WAHA_MEDIA_MAX_BYTES_ERROR) from exc
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_MAX_BYTES_ERROR,
+        ) from exc
+
     if max_bytes <= 0:
-        raise ImproperlyConfigured(_WAHA_MEDIA_MAX_BYTES_ERROR)
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_MAX_BYTES_ERROR,
+        )
+
     return max_bytes
 
 
-WAHA_MEDIA_MAX_BYTES = _load_waha_media_max_bytes()
+    TWILIO_MEDIA_MAX_BYTES = _load_twilio_media_max_bytes()
+    try:
+        timeout_seconds = int(raw_value)
+    except (TypeError, ValueError) as exc:
+     raise ImproperlyConfigured(
+        _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR,
+    ) from exc
+
+    if value <= 0:
+     raise ImproperlyConfigured(
+        _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR,
+    )
+    return timeout_seconds
+
+_TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
+    "TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
+)
+
+
+def _load_twilio_media_download_timeout_seconds() -> int:
+    raw_value = (
+        env("TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS", default="30")
+        or "30"
+    )
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR,
+        ) from exc
+
+    if value <= 0:
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR,
+        )
+
+    return value
+
+
+TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS = (
+    _load_twilio_media_download_timeout_seconds()
+)
+
+
+_TWILIO_MEDIA_MAX_BYTES_ERROR = (
+    "TWILIO_MEDIA_MAX_BYTES must be a positive integer."
+)
+
+
+def _load_twilio_media_max_bytes() -> int:
+    raw_value = (
+        env("TWILIO_MEDIA_MAX_BYTES", default="10485760")
+        or "10485760"
+    )
+
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_MAX_BYTES_ERROR,
+        ) from exc
+
+    if value <= 0:
+        raise ImproperlyConfigured(
+            _TWILIO_MEDIA_MAX_BYTES_ERROR,
+        )
+
+    return value
+
+
+TWILIO_MEDIA_MAX_BYTES = _load_twilio_media_max_bytes()
 
 # Master switch for WhatsApp lead qualification flows (menu, inactivity, extraction).
 LEAD_QUALIFICATION_ENABLED = env.bool("LEAD_QUALIFICATION_ENABLED", default=True)

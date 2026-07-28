@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from apps.whatsapp.config import (
+from apps.whatsapp.waha_config_backup import (
     WahaConfigurationError,
     get_waha_api_key,
     get_waha_base_url,

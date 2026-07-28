@@ -9,7 +9,10 @@ from django.conf import settings
 
 logger = logging.getLogger("apps.qualification")
 
-_EPHEMERAL_TUNNEL_PATTERN = re.compile(r"trycloudflare\.com|ngrok-free\.app|ngrok\.io", re.IGNORECASE)
+_EPHEMERAL_TUNNEL_PATTERN = re.compile(
+    r"trycloudflare\.com|ngrok-free\.app|ngrok\.io",
+    re.IGNORECASE,
+)
 
 
 def log_voice_agent_config() -> None:
@@ -20,16 +23,29 @@ def log_voice_agent_config() -> None:
             step="voice_agent_config",
             deepgram_model=settings.DEEPGRAM_MODEL,
             deepgram_timeout_seconds=settings.DEEPGRAM_TIMEOUT_SECONDS,
-            deepgram_api_key="configured" if settings.DEEPGRAM_API_KEY else "missing",
-            waha_media_download_timeout_seconds=settings.WAHA_MEDIA_DOWNLOAD_TIMEOUT_SECONDS,
-            waha_media_credentials=(
+            deepgram_api_key=(
                 "configured"
-                if settings.WAHA_BASE_URL and settings.WAHA_API_KEY
+                if settings.DEEPGRAM_API_KEY
+                else "missing"
+            ),
+            twilio_media_download_timeout_seconds=(
+                settings.TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS
+            ),
+            twilio_media_credentials=(
+                "configured"
+                if (
+                    settings.TWILIO_ACCOUNT_SID
+                    and settings.TWILIO_AUTH_TOKEN
+                )
                 else "missing"
             ),
             openrouter_model=settings.OPENROUTER_MODEL or "missing",
             openrouter_timeout_seconds=settings.OPENROUTER_TIMEOUT_SECONDS,
-            openrouter_api_key="configured" if settings.OPENROUTER_API_KEY else "missing",
+            openrouter_api_key=(
+                "configured"
+                if settings.OPENROUTER_API_KEY
+                else "missing"
+            ),
         ),
     )
 
@@ -69,8 +85,8 @@ def validate_qualification_startup_config() -> None:
             json_event(
                 "qualification_startup_missing_public_media_base_url",
                 message=(
-                    "Neither PUBLIC_MEDIA_BASE_URL nor BASE_WEBHOOK_URL is configured; "
-                    "render-audio media URLs cannot be generated."
+                    "Neither PUBLIC_MEDIA_BASE_URL nor BASE_WEBHOOK_URL "
+                    "is configured; render-audio media URLs cannot be generated."
                 ),
             ),
         )
@@ -84,7 +100,10 @@ def validate_qualification_startup_config() -> None:
                 json_event(
                     "qualification_startup_ephemeral_public_url",
                     setting=label,
-                    message="Configured public URL appears to use an ephemeral tunnel domain.",
+                    message=(
+                        "Configured public URL appears to use an "
+                        "ephemeral tunnel domain."
+                    ),
                 ),
             )
 

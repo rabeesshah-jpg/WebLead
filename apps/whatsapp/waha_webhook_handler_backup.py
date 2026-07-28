@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.whatsapp.config import chat_id_to_e164
+from apps.whatsapp.waha_config_backup import chat_id_to_e164
 
 _AUDIO_MIME_PREFIXES = ("audio/", "application/ogg")
 
