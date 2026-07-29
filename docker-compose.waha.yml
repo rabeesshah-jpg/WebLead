@@ -1,5 +1,5 @@
 # WAHA (WhatsApp HTTP API) for Nora AI
-# Business number: +923301675395
+# Business number: +923121363468
 #
 # Loads ${WAHA_*} from the project `.env` (or the shell). Do not hardcode webhook URLs.
 #
@@ -21,7 +21,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WHATSAPP_DEFAULT_ENGINE: SIM
       WAHA_API_KEY: ${WAHA_API_KEY:-}
       # Public base used inside media.url fields (set in production).
       WAHA_BASE_URL: ${WAHA_PUBLIC_BASE_URL:-http://localhost:3000}

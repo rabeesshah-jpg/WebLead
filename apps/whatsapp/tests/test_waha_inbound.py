@@ -12,13 +12,13 @@ from apps.whatsapp.webhook_handler import parse_waha_inbound_to_extract_payload
 
 
 def test_phone_to_chat_id_strips_plus_and_whatsapp_prefix():
-    assert phone_to_chat_id("+923301675395") == "923301675395@c.us"
-    assert phone_to_chat_id("whatsapp:+923301675395") == "923301675395@c.us"
-    assert phone_to_chat_id("923301675395@c.us") == "923301675395@c.us"
+    assert phone_to_chat_id("+923121363468") == "923121363468@c.us"
+    assert phone_to_chat_id("whatsapp:+923121363468") == "923121363468@c.us"
+    assert phone_to_chat_id("923121363468@c.us") == "923121363468@c.us"
 
 
 def test_chat_id_to_e164():
-    assert chat_id_to_e164("923301675395@c.us") == "+923301675395"
+    assert chat_id_to_e164("923121363468@c.us") == "+923121363468"
 
 
 def test_parse_waha_text_message():
@@ -27,7 +27,7 @@ def test_parse_waha_text_message():
             "event": "message",
             "session": "default",
             "payload": {
-                "id": "true_923301675395@c.us_ABCDEF1234567890",
+                "id": "true_923121363468@c.us_ABCDEF1234567890",
                 "from": "923246271149@c.us",
                 "fromMe": False,
                 "body": "Hello",
@@ -36,7 +36,7 @@ def test_parse_waha_text_message():
     assert payload is not None
     assert payload["whatsapp_number"] == "+923246271149"
     assert payload["message"] == "Hello"
-    assert payload["message_sid"] == "true_923301675395@c.us_ABCDEF1234567890"
+    assert payload["message_sid"] == "true_923121363468@c.us_ABCDEF1234567890"
     assert payload["input_channel"] == "whatsapp_text"
 
 

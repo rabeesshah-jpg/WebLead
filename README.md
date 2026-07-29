@@ -4,7 +4,7 @@ Django backend for **Nora AI**: bilingual (English / Arabic) WhatsApp lead quali
 
 | Item | Value |
 |------|--------|
-| Business WhatsApp number | **+923301675395** |
+| Business WhatsApp number | **+923121363468** |
 | WhatsApp transport | **WAHA** (WhatsApp HTTP API) |
 | Orchestration | **n8n** workflows |
 | Runtime | Python **3.12**, Django **5.x** |
@@ -96,7 +96,7 @@ When extract returns `option_template` (and typically `should_send_text === fals
 ### Inbound text / button / list reply
 
 ```text
-1. User messages +923301675395
+1. User messages +923121363468
 2. WAHA POSTs event to:
      /api/webhooks/waha/whatsapp-inbound/
    Header: X-Api-Key: <WAHA_WEBHOOK_SECRET or WAHA_API_KEY>
@@ -173,7 +173,7 @@ whatsapp-voice-lead-agent/
 - Docker (for WAHA)
 - Optional: PostgreSQL, Redis
 - Accounts / services:
-  - WAHA session linked to +923301675395
+  - WAHA session linked to +923121363468
   - n8n instance with WhatsApp inbound workflow
   - OpenRouter API key + model
   - Deepgram API key (voice notes)
@@ -282,7 +282,7 @@ docker compose -f docker-compose.waha.yml exec waha \
 
 1. Open Swagger at `http://localhost:3000` (send `X-Api-Key` as configured).
 2. Create/start session `default` (or match `WAHA_SESSION`).
-3. Fetch QR (`GET /api/default/auth/qr` or Dashboard) and scan with the phone for **+923301675395**.
+3. Fetch QR (`GET /api/default/auth/qr` or Dashboard) and scan with the phone for **+923121363468**.
 4. Confirm session status `WORKING`.
 5. Send a test WhatsApp message from another phone and confirm Django / n8n receive it.
 

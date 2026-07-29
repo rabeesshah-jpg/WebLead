@@ -46,9 +46,9 @@ def phone_to_chat_id(phone_number: str) -> str:
     Convert an E.164 (or digits) phone number to a WAHA chatId.
 
     Examples:
-    - ``+923301675395`` -> ``923301675395@c.us``
-    - ``whatsapp:+923301675395`` -> ``923301675395@c.us``
-    - ``923301675395@c.us`` -> unchanged
+    - ``+923121363468`` -> ``923121363468@c.us``
+    - ``whatsapp:+923121363468`` -> ``923121363468@c.us``
+    - ``923121363468@c.us`` -> unchanged
     """
     raw = "".join(str(phone_number or "").split())
     if not raw:

@@ -1,6 +1,6 @@
 # WAHA setup guide (Nora AI WhatsApp)
 
-Business WhatsApp number for this project: **+923301675395**.
+Business WhatsApp number for this project: **+923121363468**.
 
 This guide covers running WAHA, linking the number via QR, pointing webhooks at Django, and smoke-testing inbound/outbound messages.
 
@@ -78,7 +78,7 @@ Remove any leftover Twilio WhatsApp variables (`TWILIO_*` Content SIDs / account
 
 Note: if `DJANGO_SECRET_KEY` (or other unused `.env` values) contain `$…`, `docker compose` may print harmless “variable is not set” warnings while substituting the project `.env`. Those do not affect WAHA when `WAHA_*` are set.
 
-## 3. Start session and scan QR (+923301675395)
+## 3. Start session and scan QR (+923121363468)
 
 Global webhooks from `WHATSAPP_HOOK_*` apply to all sessions. You can still attach a per-session webhook when creating the session (same URL and `X-Api-Key` header).
 
@@ -105,7 +105,7 @@ Global webhooks from `WHATSAPP_HOOK_*` apply to all sessions. You can still atta
 
 (Use your public Django HTTPS URL in production instead of `host.docker.internal`.)
 
-3. `GET /api/default/auth/qr` (or use the Dashboard) and scan with the phone that owns **+923301675395**.
+3. `GET /api/default/auth/qr` (or use the Dashboard) and scan with the phone that owns **+923121363468**.
 4. Confirm session status is `WORKING`.
 
 ## 4. Webhook URL checklist
@@ -143,7 +143,7 @@ curl -sS -X POST "$BASE_WEBHOOK_URL/api/internal/whatsapp/send/" \
 
 ## 6. Test inbound
 
-1. From another phone, send a WhatsApp text to **+923301675395**.
+1. From another phone, send a WhatsApp text to **+923121363468**.
 2. Confirm WAHA Event Monitor shows a `message` event.
 3. Confirm Django returns 200 and n8n receives JSON with `whatsapp_number`, `message`, `message_sid`.
 4. Confirm extract runs and a reply is sent (language picker on first contact).

@@ -67,7 +67,7 @@ def send_whatsapp_message(phone_number: str, message: str) -> str:
     Send a plain-text WhatsApp message via WAHA.
 
     ``phone_number`` may be E.164 (``+9233…``) or any customer number; the
-    WAHA session is authenticated as the business line (e.g. +923301675395).
+    WAHA session is authenticated as the business line (e.g. +923121363468).
     """
     try:
         return waha_client.send_text(phone_number=phone_number, text=message)
