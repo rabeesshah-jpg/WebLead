@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+from django.conf import settings
 
 from apps.qualification.domain.language_selection import (
     LANGUAGE_ENGLISH,
@@ -25,6 +26,11 @@ from apps.qualification.domain.qualification_options import (
 from apps.qualification.integrations.twilio_whatsapp_message import (
     TwilioWhatsAppConfigurationError,
     send_whatsapp_text_message as send_twilio_text_message,
+)
+
+from apps.qualification.integrations.ultramsg_whatsapp_message import (
+    UltraMsgWhatsAppConfigurationError,
+    send_ultramsg_text_message,
 )
 
 from apps.qualification.integrations.twilio_whatsapp_menu import (
@@ -64,14 +70,27 @@ PROJECT_TYPE_BUTTONS: tuple[tuple[str, str], ...] = (
 
 def send_whatsapp_message(phone_number: str, message: str) -> str:
     """
-    Send plain WhatsApp text message via Twilio.
+    Send plain WhatsApp text message using configured provider.
     """
+
+    provider = getattr(settings, "WHATSAPP_PROVIDER", "twilio").lower()
+
     try:
+        if provider == "ultramsg":
+            return send_ultramsg_text_message(
+                to_number=phone_number,
+                body=message,
+            )
+
         return send_twilio_text_message(
             to_number=phone_number,
             body=message,
         )
-    except TwilioWhatsAppConfigurationError as exc:
+
+    except (
+        TwilioWhatsAppConfigurationError,
+        UltraMsgWhatsAppConfigurationError,
+    ) as exc:
         raise WhatsAppSendError(str(exc)) from exc
 
 

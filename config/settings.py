@@ -143,6 +143,24 @@ TWILIO_WHATSAPP_MENU_CONTENT_SID = env(
     default="",
 )
 
+# UltraMsg WhatsApp transport.
+WHATSAPP_PROVIDER = env("WHATSAPP_PROVIDER", default="twilio").lower()
+
+ULTRAMSG_BASE_URL = env(
+    "ULTRAMSG_BASE_URL",
+    default="https://api.ultramsg.com",
+).rstrip("/")
+
+ULTRAMSG_INSTANCE_ID = env(
+    "ULTRAMSG_INSTANCE_ID",
+    default="",
+)
+
+ULTRAMSG_TOKEN = env(
+    "ULTRAMSG_TOKEN",
+    default="",
+)
+
 
 _TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS_ERROR = (
     "TWILIO_MEDIA_DOWNLOAD_TIMEOUT_SECONDS must be a positive integer."
