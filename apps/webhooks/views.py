@@ -70,7 +70,6 @@ def ultramsg_whatsapp_inbound(request: HttpRequest) -> HttpResponse:
         media_url = media or ""
         media_content_type = None
 
-
     params = {
         "body": {
             "MessageSid": data.get("id", ""),
@@ -89,11 +88,91 @@ def ultramsg_whatsapp_inbound(request: HttpRequest) -> HttpResponse:
         }
     }
 
-
     print("========== ULTRAMSG ORIGINAL ==========")
     print(json.dumps(payload, indent=2))
 
     print("========== SENT TO N8N ==========")
+    print(json.dumps(params, indent=2))
+
+    try:
+        forward_to_n8n(params)
+
+    except N8nForwardError as exc:
+        log_n8n_forward_failed(request, error=str(exc))
+        return HttpResponse(status=502)
+
+    return HttpResponse(status=200)
+
+
+@csrf_exempt
+@require_POST
+def ghl_whatsapp_inbound(request: HttpRequest) -> HttpResponse:
+    """
+    Receive incoming WhatsApp messages from GoHighLevel.
+
+    Converts GHL payload into the existing internal
+    Twilio-compatible format so existing n8n
+    qualification workflow continues working.
+    """
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+
+    except Exception:
+        return HttpResponse(status=400)
+
+
+    print("========== GHL ORIGINAL ==========")
+    print(json.dumps(payload, indent=2))
+
+
+    # Temporary mapping.
+    # Update these fields after receiving real GHL webhook payload.
+
+    message_id = (
+        payload.get("messageId")
+        or payload.get("id")
+        or ""
+    )
+
+    phone = (
+        payload.get("phone")
+        or payload.get("contact", {}).get("phone")
+        or ""
+    )
+
+    message = (
+        payload.get("message")
+        or payload.get("body")
+        or payload.get("text")
+        or ""
+    )
+
+
+    if phone and not phone.startswith("whatsapp:"):
+        phone = f"whatsapp:{phone}"
+
+
+    params = {
+        "body": {
+            "MessageSid": message_id,
+
+            "From": phone,
+
+            "To": "",
+
+            "Body": message,
+
+            "NumMedia": "0",
+
+            "MediaUrl0": "",
+
+            "MediaContentType0": "",
+        }
+    }
+
+
+    print("========== GHL NORMALIZED ==========")
     print(json.dumps(params, indent=2))
 
 
@@ -103,5 +182,6 @@ def ultramsg_whatsapp_inbound(request: HttpRequest) -> HttpResponse:
     except N8nForwardError as exc:
         log_n8n_forward_failed(request, error=str(exc))
         return HttpResponse(status=502)
+
 
     return HttpResponse(status=200)
