@@ -32,6 +32,10 @@ from apps.qualification.integrations.ultramsg_whatsapp_message import (
     UltraMsgWhatsAppConfigurationError,
     send_ultramsg_text_message,
 )
+from apps.qualification.integrations.ghl_whatsapp_message import (
+    GHLWhatsAppConfigurationError,
+    send_ghl_text_message,
+)
 
 from apps.qualification.integrations.twilio_whatsapp_menu import (
     send_whatsapp_menu as send_twilio_menu,
@@ -76,20 +80,31 @@ def send_whatsapp_message(phone_number: str, message: str) -> str:
     provider = getattr(settings, "WHATSAPP_PROVIDER", "twilio").lower()
 
     try:
+
         if provider == "ultramsg":
             return send_ultramsg_text_message(
                 to_number=phone_number,
                 body=message,
             )
 
+
+        if provider == "ghl":
+            return send_ghl_text_message(
+                to_number=phone_number,
+                body=message,
+            )
+
+
         return send_twilio_text_message(
             to_number=phone_number,
             body=message,
         )
 
+
     except (
         TwilioWhatsAppConfigurationError,
         UltraMsgWhatsAppConfigurationError,
+        GHLWhatsAppConfigurationError,
     ) as exc:
         raise WhatsAppSendError(str(exc)) from exc
 
