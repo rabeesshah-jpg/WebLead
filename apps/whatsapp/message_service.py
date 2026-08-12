@@ -277,11 +277,11 @@ def deliver_option_template(
     Route qualification templates through Twilio.
     """
 
-    if option_template == "referral_source":
-        return send_referral_source_list(
-            to_number=phone_number,
-            language=language,
-        )
+    # if option_template == "referral_source":
+    #     return send_referral_source_list(
+    #         to_number=phone_number,
+    #         language=language,
+    #     )
 
     if option_template == "business_type":
         return send_business_type_list(
