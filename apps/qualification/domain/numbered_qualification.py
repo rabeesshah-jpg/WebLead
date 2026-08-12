@@ -292,6 +292,7 @@ TWILIO_LIST_PICKER_OPTION_ALIASES: dict[str, dict[str, str]] = {
     "ads_under_2k": "ads_lt_2k",
     "ads_lt_2k": "ads_lt_2k",
     "under_2k": "ads_lt_2k",
+    "ads_low": "ads_lt_2k",     
     "ads_2k_10k": "ads_2k_10k",
     "ads_mid": "ads_2k_10k",
     "ads_over_10k": "ads_gt_10k",
@@ -303,10 +304,10 @@ TWILIO_LIST_PICKER_OPTION_ALIASES: dict[str, dict[str, str]] = {
     "yes, $2,000–$10,000 per month": "ads_2k_10k",
     "yes, $2,000-$10,000 per month": "ads_2k_10k",
     "yes, more than $10,000 per month": "ads_gt_10k",
-    "ads_none_ar": "ads_none",       
-    "ads_boost_ar": "ads_boost",     
-    "ads_low_ar": "ads_lt_2k",       
-    "ads_high_ar": "ads_gt_10k",     
+    "ads_none_ar": "ads_none",
+    "ads_boost_ar": "ads_boost",
+    "ads_low_ar": "ads_lt_2k",
+    "ads_high_ar": "ads_gt_10k",
 },
 
     "main_goal": {
