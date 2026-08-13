@@ -93,6 +93,21 @@ class WhatsAppConversationSession(models.Model):
     # Durable in-progress qualification fields. Cache/Redis remains a fast overlay;
     # this JSON blob is the restart-safe source of truth for the active cycle.
     accepted_fields = models.JSONField(default=dict, blank=True)
+
+    # --- Queryable lead columns (mirrors accepted_fields, written alongside it) ---
+    customer_type = models.CharField(max_length=32, null=True, blank=True, db_index=True)
+    referral_source = models.CharField(max_length=32, null=True, blank=True)
+    business_type = models.CharField(max_length=32, null=True, blank=True)
+    website_status = models.CharField(max_length=32, null=True, blank=True)
+    paid_ads = models.CharField(max_length=32, null=True, blank=True)
+    main_goal = models.CharField(max_length=32, null=True, blank=True)
+    launch_timeline = models.CharField(max_length=32, null=True, blank=True)
+    requirements = models.TextField(null=True, blank=True)
+    whatsapp_confirmed = models.BooleanField(null=True, blank=True)
+    preferred_phone = models.CharField(max_length=32, null=True, blank=True)
+    qualification_step = models.CharField(max_length=32, null=True, blank=True)
+    qualification_complete = models.BooleanField(default=False, db_index=True)
+
     # Bumped on idle reset / menu restart so delivery markers belong to one cycle.
     conversation_cycle = models.PositiveIntegerField(default=1, db_index=True)
     onboarding_intro_sent = models.BooleanField(default=True, db_index=True)

@@ -260,18 +260,58 @@ def bump_conversation_cycle(
     return session
 
 
+# Columns mirrored from accepted_fields onto queryable model fields.
+_MIRRORED_ACCEPTED_FIELDS = (
+    "customer_type",
+    "referral_source",
+    "business_type",
+    "website_status",
+    "paid_ads",
+    "main_goal",
+    "launch_timeline",
+    "requirements",
+    "whatsapp_confirmed",
+    "preferred_phone",
+    "qualification_step",
+)
+
+
 def persist_accepted_fields_to_session(
     *,
     whatsapp_number: str,
     accepted_fields: dict,
 ) -> WhatsAppConversationSession:
-    """Persist qualification accepted_fields to the durable session row."""
+    """Persist qualification accepted_fields to the durable session row.
+
+    Also mirrors known qualification keys onto individual columns so the
+    session row is directly queryable (e.g. from Supabase) without parsing
+    the accepted_fields JSON blob.
+    """
     canonical_number = normalize_whatsapp_session_number(whatsapp_number)
     session, _ = get_or_create_conversation_session(whatsapp_number=canonical_number)
     with transaction.atomic():
         locked = WhatsAppConversationSession.objects.select_for_update().get(pk=session.pk)
         locked.accepted_fields = dict(accepted_fields)
-        locked.save(update_fields=["accepted_fields"])
+
+        update_fields = ["accepted_fields"]
+        for field_name in _MIRRORED_ACCEPTED_FIELDS:
+            if field_name in accepted_fields:
+                setattr(locked, field_name, accepted_fields[field_name])
+                update_fields.append(field_name)
+
+        all_required = (
+            "business_type",
+            "website_status",
+            "paid_ads",
+            "main_goal",
+            "launch_timeline",
+        )
+        is_complete = all(accepted_fields.get(f) for f in all_required)
+        if is_complete != locked.qualification_complete:
+            locked.qualification_complete = is_complete
+            update_fields.append("qualification_complete")
+
+        locked.save(update_fields=update_fields)
     session.refresh_from_db()
     return session
 
